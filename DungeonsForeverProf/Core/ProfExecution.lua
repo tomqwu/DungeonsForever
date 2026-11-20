@@ -24,6 +24,7 @@ local learningChecks = setmetatable({}, {__mode="k"})
 local performance = {creditBuilds=0,historyScans=0}
 local completionTimer, observationGeneration = false, 0
 local idleTimer, checkingIdle, combatPaused
+local changeTimer, pendingChanges = nil, {}
 local IDLE_LIMIT = 48 * 60 * 60
 local observedActive, observedReceipts
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
@@ -227,6 +228,11 @@ local function referencesChanged()
 end
 local function changed(run,lifecycleReason)
     run.progressVersion=(run.progressVersion or 0)+1;run.updatedAt=now()
+    if (not lifecycleReason or lifecycleReason=="progress" or lifecycleReason=="inventory")
+        and pendingChanges[run.planID] then
+        pendingChanges[run.planID]={slug=run.slug,run=run,reason=lifecycleReason or pendingChanges[run.planID].reason or "progress"}
+        return
+    end
     referencesChanged()
     if XP.GetRecipeTotals and readablePlan(run) then
         run.byRecipe=XP.GetRecipeTotals(run.slug,run.planID,true)
@@ -248,7 +254,28 @@ local function changed(run,lifecycleReason)
         end
         run.materialLedger=ledger
     end
-    for _,fn in ipairs(listeners) do pcall(fn,run.slug,run,lifecycleReason) end
+    if lifecycleReason=="ended" or lifecycleReason=="dropped" or lifecycleReason=="completed"
+        or lifecycleReason=="archived" or lifecycleReason=="catalogueFiltered" then
+        for _,fn in ipairs(listeners) do pcall(fn,run.slug,run,lifecycleReason) end
+        return
+    end
+    pendingChanges[run.planID]={slug=run.slug,run=run,reason=lifecycleReason or "progress"}
+    if changeTimer then return end
+    if C_Timer and C_Timer.After then
+        changeTimer=true
+        C_Timer.After(0.05,function()
+            changeTimer=nil
+            local batch=pendingChanges;pendingChanges={}
+            for _,notification in pairs(batch) do
+                for _,fn in ipairs(listeners) do pcall(fn,notification.slug,notification.run,notification.reason) end
+            end
+        end)
+    else
+        local batch=pendingChanges;pendingChanges={}
+        for _,notification in pairs(batch) do
+            for _,fn in ipairs(listeners) do pcall(fn,notification.slug,notification.run,notification.reason) end
+        end
+    end
 end
 function XP.PerformanceCounters()
     return {creditBuilds=performance.creditBuilds,historyScans=performance.historyScans}
@@ -359,7 +386,73 @@ local function pruneArchived(slug)
             if hasFacts then kept=kept+1 end
             if (not hasFacts or kept>3) and XP.Remove(slug,entry.id) then removed=true end
         end
-    until not removed
+        until not removed
+end
+local function dropRefs(run,gone)
+    if type(run)~="table" then return end
+    if gone[run.inheritedFrom] then run.inheritedFrom=nil end
+    if gone[run.originPlanID] then run.originPlanID=nil end
+    local plan=type(run.plan)=="table" and run.plan or nil
+    if not plan then return end
+    if gone[plan.executionSourcePlanID] then plan.executionSourcePlanID=nil end
+    local opts=type(plan.executionOptions)=="table" and plan.executionOptions or nil
+    if opts and gone[opts.executionSourcePlanID] then opts.executionSourcePlanID=nil end
+end
+function XP.PruneAll(limit)
+    limit=tonumber(limit) or 1
+    local prof=ns.ProfessionDB(false)
+    local track=type(prof)=="table" and prof.track or nil
+    if type(track)~="table" then return 0 end
+    local removed=0
+    for _,c in pairs(track) do
+        if type(c)=="table" and type(c.runs)=="table" then
+            local pinned={}
+            for _,id in pairs(c.active or {}) do pinned[id]=true end
+            for _,sources in ipairs({c.preparing or {},c.continuation or {}}) do
+                for _,source in pairs(sources) do
+                    if type(source)=="table" and source.sourcePlanID then pinned[source.sourcePlanID]=true end
+                end
+            end
+            local groups={}
+            for id,run in pairs(c.runs) do
+                if type(run)=="table" and run.status~="active" and not pinned[id] then
+                    local slug=tostring(run.slug or "")
+                    local bucket=groups[slug]
+                    if not bucket then bucket={};groups[slug]=bucket end
+                    bucket[#bucket+1]={id=id,at=tonumber(run.archivedAt or run.updatedAt or run.createdAt) or 0,fact=recorded(run)}
+                end
+            end
+            local gone={}
+            for _,bucket in pairs(groups) do
+                table.sort(bucket,function(a,b)
+                    if a.at~=b.at then return a.at>b.at end
+                    return tostring(a.id)>tostring(b.id)
+                end)
+                local kept=0
+                for _,entry in ipairs(bucket) do
+                    if entry.fact and kept<limit then kept=kept+1 else gone[entry.id]=true end
+                end
+            end
+            if next(gone) then
+                for id in pairs(gone) do
+                    local run=c.runs[id]
+                    c.runs[id]=nil
+                    for _,contracts in pairs(c.endedContracts or {}) do
+                        for signature,planID in pairs(contracts) do if planID==id then contracts[signature]=true end end
+                    end
+                    if type(run)=="table" then
+                        creditCaches[run]=nil
+                        if run.plan then learningChecks[run.plan]=nil end
+                    end
+                    removed=removed+1
+                end
+                for _,run in pairs(c.runs) do dropRefs(run,gone) end
+                referencesChanged()
+            end
+        end
+    end
+    if removed>0 and XP.RefreshObservation then pcall(XP.RefreshObservation) end
+    return removed
 end
 function XP.GetSummary(slug,planID)
     local run
@@ -411,6 +504,7 @@ local function ready(result)
         and not result.finalizing
         and result.status ~= "selection_required"
         and result.status ~= "recalculate_required"
+        and not result.pricingPolicyStale
         and #steps(result) > 0
 end
 local function originSignature(plan)
@@ -583,6 +677,7 @@ function XP.Bind(slug,result,opts)
         ids[old]=id;seg.segmentID=id;seg.actionID=id
     end
     for _,seg in ipairs(steps(plan)) do for _,a in ipairs(seg.allocations or {}) do if ids[a.consumerID] then a.consumerID=ids[a.consumerID] end end end
+    for _,a in ipairs(plan.seedAllocations or {}) do if ids[a.consumerID] then a.consumerID=ids[a.consumerID] end end
     for _,seg in ipairs(steps(plan)) do for _,a in ipairs(seg.reserve and seg.reserve.allocations or {}) do
         if ids[a.consumerID] then a.consumerID=ids[a.consumerID] end
     end end
@@ -669,8 +764,21 @@ local function creditsFor(run,target,skillSnapshot)
         local o={seg=seg,index=index,record=record,funded=funded,required=requiredOutputs(seg,run),
             consumed={},waived={},destinations={},released={}}
         list[#list+1]=o;bySegment[seg.segmentID]=o;used[seg.segmentID]={}
+        local alias=type(seg.segmentID)=="string" and seg.segmentID:match("(segment:.*)$")
+        if alias then bySegment[alias]=o end
         for _,m in ipairs(recipe(seg,run.slug).mats or {}) do
             used[seg.segmentID][m[1]]=(used[seg.segmentID][m[1]] or 0)+m[2]*casts
+        end
+    end
+    local seedReservations={}
+    for _,allocation in ipairs(run.plan.seedAllocations or {}) do
+        local id=allocation.consumerID
+        local consumer=bySegment[id] or type(id)=="string" and bySegment[id:match("(segment:.*)$")]
+        local item=allocation.itemID
+        if item and (allocation.count or 0)>0 then
+            local spent=consumer and min(allocation.count,used[consumer.seg.segmentID][item] or 0) or 0
+            if consumer then used[consumer.seg.segmentID][item]=(used[consumer.seg.segmentID][item] or 0)-spent end
+            seedReservations[#seedReservations+1]={item=item,count=allocation.count-spent,consumer=consumer}
         end
     end
     for _,o in ipairs(list) do
@@ -707,6 +815,17 @@ local function creditsFor(run,target,skillSnapshot)
     end
     local function allocateBags()
         local stock=copy(inventory)
+        local released={}
+        for _,reservation in ipairs(seedReservations) do
+            local item=reservation.item
+            local consumer=reservation.consumer
+            local key=consumer and consumer.seg.segmentID
+            local byItem=key and released[key] or {}
+            if key then released[key]=byItem end
+            local skip=consumer and max(0,(consumer.released[item] or 0)-(byItem[item] or 0)) or 0
+            skip=min(skip,reservation.count);byItem[item]=(byItem[item] or 0)+skip
+            if stock[item] then stock[item]=max(0,stock[item]-reservation.count+skip) end
+        end
         for _,o in ipairs(list) do
             o.credited={};o.available={};o.unknown=false
             for item,required in pairs(o.required) do
@@ -967,6 +1086,7 @@ function XP.Sync(slug,result)
         end
     end
     local index=1
+    local previousIndex=run.currentIndex or 1
     local skillSnapshot=E and E.Professions and E.Professions()
     local credits={}
     while index<=#steps(run.plan) do local p=XP.Progress(slug,index,skillSnapshot,nil,credits);if not p.complete then break end;index=index+1 end
@@ -979,7 +1099,8 @@ function XP.Sync(slug,result)
         if now()>=run.completionDue then XP.End(slug,"completed")
         elseif XP.RefreshObservation then XP.RefreshObservation() end
     else run.completionDue=nil end
-    if observed and run.status=="active" then changed(run) end
+    if observed and run.status=="active" then changed(run)
+    elseif run.currentIndex~=previousIndex and run.status=="active" then changed(run,"progress") end
     return run
 end
 local function matchingSegment(run,spell,id)

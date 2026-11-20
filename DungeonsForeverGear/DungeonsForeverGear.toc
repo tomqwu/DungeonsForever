@@ -18,6 +18,7 @@
 
 Core\ModuleInit.lua
 Core\Data\Data_Gear.lua
+Core\Data\Data_GearSets.lua
 Core\Data\Data_GearCls.lua
 Core\Data\Data_GearQuestChain.lua
 Core\Data\Data_GearQuestReward.lua
@@ -31,6 +32,7 @@ Core\Data\zhTW\Data_GearVendors.lua [AllowLoadTextLocale zhTW]
 Core\Data\zhTW\Data_BIS.lua [AllowLoadTextLocale zhTW]
 Core\Data\enUS\Data_Gear.lua [AllowLoadTextLocale enUS]
 Core\Data\enUS\Data_BIS.lua [AllowLoadTextLocale enUS]
+Core\Data\enUS\Data_GearRareSpawns.lua [AllowLoadTextLocale enUS]
 Core\GearUI.lua
 Core\BisUI.lua
 Core\BagArrow.lua

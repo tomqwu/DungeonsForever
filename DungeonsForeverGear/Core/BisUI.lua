@@ -155,52 +155,60 @@ local PRIM_STAT = {
 
 local SPEC_DIR = {
     warrior = {
-        { key = "arms",   label = "武器", role = "phys", icon = "Interface\\Icons\\ability_warrior_savageblow" },
-        { key = "fury",   label = "狂暴", role = "phys", icon = "Interface\\Icons\\ability_warrior_innerrage" },
-        { key = "prot",   label = "防战", role = "tank", icon = "Interface\\Icons\\ability_warrior_defensivestance" },
+        { key = "arms",   label = "武器", en = "Arms", role = "phys", icon = "Interface\\Icons\\ability_warrior_savageblow" },
+        { key = "fury",   label = "狂暴", en = "Fury", role = "phys", icon = "Interface\\Icons\\ability_warrior_innerrage" },
+        { key = "prot",   label = "防战", en = "Protection", role = "tank", icon = "Interface\\Icons\\ability_warrior_defensivestance" },
     },
     paladin = {
-        { key = "holy",   label = "奶骑", role = "heal", icon = "Interface\\Icons\\Spell_Holy_HolyBolt" },
-        { key = "prot",   label = "防骑", role = "tank", icon = "Interface\\Icons\\Spell_Holy_DevotionAura" },
-        { key = "ret",    label = "惩戒", role = "phys", icon = "Interface\\Icons\\Spell_Holy_AuraOfLight" },
+        { key = "holy",   label = "奶骑", en = "Holy", role = "heal", icon = "Interface\\Icons\\Spell_Holy_HolyBolt" },
+        { key = "prot",   label = "防骑", en = "Protection", role = "tank", icon = "Interface\\Icons\\Spell_Holy_DevotionAura" },
+        { key = "ret",    label = "惩戒", en = "Retribution", role = "phys", icon = "Interface\\Icons\\Spell_Holy_AuraOfLight" },
     },
     hunter = {
-        { key = "bm",     label = "兽王", role = "phys", icon = "Interface\\Icons\\Ability_Hunter_BeastTaming" },
-        { key = "mm",     label = "射击", role = "phys", icon = "Interface\\Icons\\Ability_Marksmanship" },
-        { key = "surv",   label = "生存", role = "phys", icon = "Interface\\Icons\\Ability_Hunter_SwiftStrike" },
+        { key = "bm",     label = "兽王", en = "Beast Mastery", role = "phys", icon = "Interface\\Icons\\Ability_Hunter_BeastTaming" },
+        { key = "mm",     label = "射击", en = "Marksmanship", role = "phys", icon = "Interface\\Icons\\Ability_Marksmanship" },
+        { key = "surv",   label = "生存", en = "Survival", role = "phys", icon = "Interface\\Icons\\Ability_Hunter_SwiftStrike" },
     },
     rogue = {
-        { key = "assa",   label = "奇袭", role = "phys", icon = "Interface\\Icons\\ability_rogue_eviscerate" },
-        { key = "combat", label = "战斗", role = "phys", icon = "Interface\\Icons\\ability_backstab" },
-        { key = "sub",    label = "敏锐", role = "phys", icon = "Interface\\Icons\\ability_stealth" },
+        { key = "assa",   label = "奇袭", en = "Assassination", role = "phys", icon = "Interface\\Icons\\ability_rogue_eviscerate" },
+        { key = "combat", label = "战斗", en = "Combat", role = "phys", icon = "Interface\\Icons\\ability_backstab" },
+        { key = "sub",    label = "敏锐", en = "Subtlety", role = "phys", icon = "Interface\\Icons\\ability_stealth" },
     },
     priest = {
-        { key = "disc",   label = "戒律", role = "heal", icon = "Interface\\Icons\\spell_holy_wordfortitude" },
-        { key = "holy",   label = "神牧", role = "heal", icon = "Interface\\Icons\\spell_holy_guardianspirit" },
-        { key = "shadow", label = "暗牧", role = "spell", icon = "Interface\\Icons\\spell_shadow_shadowwordpain" },
+        { key = "disc",   label = "戒律", en = "Discipline", role = "heal", icon = "Interface\\Icons\\spell_holy_wordfortitude" },
+        { key = "holy",   label = "神牧", en = "Holy", role = "heal", icon = "Interface\\Icons\\spell_holy_guardianspirit" },
+        { key = "shadow", label = "暗牧", en = "Shadow", role = "spell", icon = "Interface\\Icons\\spell_shadow_shadowwordpain" },
     },
     shaman = {
-        { key = "ele",    label = "元素", role = "spell", icon = "Interface\\Icons\\spell_nature_lightning" },
-        { key = "enh",    label = "增强", role = "phys", icon = "Interface\\Icons\\spell_nature_lightningshield" },
-        { key = "resto",  label = "奶萨", role = "heal", icon = "Interface\\Icons\\Spell_Nature_HealingWaveGreater" },
+        { key = "ele",    label = "元素", en = "Elemental", role = "spell", icon = "Interface\\Icons\\spell_nature_lightning" },
+        { key = "enh",    label = "增强", en = "Enhancement", role = "phys", icon = "Interface\\Icons\\spell_nature_lightningshield" },
+        { key = "resto",  label = "奶萨", en = "Restoration", role = "heal", icon = "Interface\\Icons\\Spell_Nature_HealingWaveGreater" },
     },
     mage = {
-        { key = "arcane", label = "奥法", role = "spell", icon = "Interface\\Icons\\inv_misc_rune_03" },
-        { key = "fire",   label = "火法", role = "spell", icon = "Interface\\Icons\\spell_fire_firebolt02" },
-        { key = "frost",  label = "冰法", role = "spell", icon = "Interface\\Icons\\spell_frost_frostbolt02" },
+        { key = "arcane", label = "奥法", en = "Arcane", role = "spell", icon = "Interface\\Icons\\inv_misc_rune_03" },
+        { key = "fire",   label = "火法", en = "Fire", role = "spell", icon = "Interface\\Icons\\spell_fire_firebolt02" },
+        { key = "frost",  label = "冰法", en = "Frost", role = "spell", icon = "Interface\\Icons\\spell_frost_frostbolt02" },
     },
     warlock = {
-        { key = "affli",  label = "痛苦", role = "spell", icon = "Interface\\Icons\\spell_shadow_deathcoil" },
-        { key = "demo",   label = "恶魔", role = "spell", icon = "Interface\\Icons\\spell_shadow_metamorphosis" },
-        { key = "destro", label = "毁灭", role = "spell", icon = "Interface\\Icons\\spell_shadow_rainoffire" },
+        { key = "affli",  label = "痛苦", en = "Affliction", role = "spell", icon = "Interface\\Icons\\spell_shadow_deathcoil" },
+        { key = "demo",   label = "恶魔", en = "Demonology", role = "spell", icon = "Interface\\Icons\\spell_shadow_metamorphosis" },
+        { key = "destro", label = "毁灭", en = "Destruction", role = "spell", icon = "Interface\\Icons\\spell_shadow_rainoffire" },
     },
     druid = {
-        { key = "balance", label = "鸟德", role = "spell", icon = "Interface\\Icons\\spell_nature_starfall" },
-        { key = "cat",     label = "猫德", role = "phys", icon = "Interface\\Icons\\Ability_Druid_CatForm" },
-        { key = "bear",    label = "熊德", role = "tank", icon = "Interface\\Icons\\ability_racial_bearform" },
-        { key = "resto",   label = "奶德", role = "heal", icon = "Interface\\Icons\\Spell_Nature_HealingTouch" },
+        { key = "balance", label = "鸟德", en = "Balance", role = "spell", icon = "Interface\\Icons\\spell_nature_starfall" },
+        { key = "cat",     label = "猫德", en = "Feral (Cat)", role = "phys", icon = "Interface\\Icons\\Ability_Druid_CatForm" },
+        { key = "bear",    label = "熊德", en = "Feral (Bear)", role = "tank", icon = "Interface\\Icons\\ability_racial_bearform" },
+        { key = "resto",   label = "奶德", en = "Restoration", role = "heal", icon = "Interface\\Icons\\Spell_Nature_HealingTouch" },
     },
 }
+
+-- 英文客户端：专精标签用英文（label 为中文简称，不走通用 L[] 以免与同名词条冲突）
+-- Non-Chinese UI: English spec names (labels are Chinese nicknames; kept out of the shared L[] table)
+BG.SPEC_EN_UI = (type(DF_Locale) == "function") and DF_Locale() ~= "zhCN" and DF_Locale() ~= "zhTW"
+function BG.SpecTabName(sr)
+    if BG.SPEC_EN_UI and sr.en then return sr.en end
+    return L[sr.label] or sr.label
+end
 
 local function RoleOfKey(cls, key)
     for _, sr in ipairs(SPEC_DIR[cls] or {}) do
@@ -219,6 +227,15 @@ local ROLE_CONST = {
     warrior = "phys", rogue = "phys",
 }
 local PURE_PHYS = { warrior = true, rogue = true, hunter = true }
+BG.SCHOOL_OK = {
+    paladin = { HOLY = true },
+    priest = { HOLY = true, SHADOW = true },
+    shaman = { NATURE = true, FROST = true, FIRE = true },
+    mage = { FIRE = true, FROST = true, ARCANE = true },
+    warlock = { FIRE = true, SHADOW = true },
+    druid = { NATURE = true, ARCANE = true },
+}
+BG.SCHOOL_KEYS = { "ARCANE", "FIRE", "FROST", "NATURE", "SHADOW", "HOLY" }
 local __tprof, __tprofDirty = nil, true
 
 local function TalentSpent(tab)
@@ -260,7 +277,7 @@ local function RoleOf(cls)
 end
 
 local function SpecWeights(cls, specId, roleOverride)
-    local role = roleOverride or RoleOfKey(cls, BG.wRole) or RoleOf(cls)
+    local role = roleOverride or RoleOfKey(cls, BG.wRole) or RoleOfKey(cls, BG.tspec) or RoleOf(cls)
     local phys = role == "phys"
     local heal = role == "heal"
     local w = {
@@ -273,7 +290,7 @@ local function SpecWeights(cls, specId, roleOverride)
         SPELL_POWER = phys and 0.4 or 1,
         CRIT_RATING = phys and 0.75 or 0.7,
         HIT_RATING = 1.1, HASTE_RATING = 0.5,
-        WEAPON_DPS = 0, RANGED_DPS = 0,
+        WEAPON_DPS = 0, RANGED_DPS = 0, PHYSICAL_DAMAGE_DONE = 0,
         MANA_REGENERATION = 0,
         HEALTH_REGEN = 0, BLOCK_VALUE = 0, SPELL_PENETRATION = 0,
         SPELL_DAMAGE_DONE = 0, SPELL_HEALING_DONE = 0,
@@ -290,6 +307,7 @@ local function SpecWeights(cls, specId, roleOverride)
             w.INTELLECT = 0.08
             w.SPIRIT = 0
             w.STAMINA = 0.5
+            w.HOLY_DAMAGE_DONE = 0.12
         elseif cls == "shaman" then
             w.INTELLECT = 0.05
             w.SPIRIT = 0.05
@@ -325,6 +343,11 @@ local function SpecWeights(cls, specId, roleOverride)
         w.NATURE_DAMAGE_DONE = 0.05
         w.SHADOW_DAMAGE_DONE = 0.05
         w.HEALTH_REGEN = 0.04
+        if cls == "paladin" then
+            w.HOLY_DAMAGE_DONE = 0.05
+        elseif cls == "priest" then
+            w.HOLY_DAMAGE_DONE = 0.05
+        end
     else
         w.SPIRIT = 0.35
         w.CRIT_RATING = 0.7
@@ -353,6 +376,19 @@ local function SpecWeights(cls, specId, roleOverride)
         w.CRIT_RATING = 0.3
         w.HIT_RATING = 0.7
         w.HASTE_RATING = 0.3
+        w.INTELLECT = 0
+        w.SPIRIT = 0
+        w.SPELL_POWER = 0
+        w.SPELL_DAMAGE_DONE = 0
+        w.SPELL_HEALING_DONE = 0
+        w.SPELL_PENETRATION = 0
+        w.MANA_REGENERATION = 0
+        w.ARCANE_DAMAGE_DONE = 0
+        w.FIRE_DAMAGE_DONE = 0
+        w.FROST_DAMAGE_DONE = 0
+        w.NATURE_DAMAGE_DONE = 0
+        w.SHADOW_DAMAGE_DONE = 0
+        w.HOLY_DAMAGE_DONE = 0
         if cls == "warrior" then
             w.STRENGTH = 0.55
             w.AGILITY = 0.45
@@ -364,16 +400,14 @@ local function SpecWeights(cls, specId, roleOverride)
             w.ATTACK_POWER = 0.35
             w.WEAPON_DPS = 3.5
             w.BLOCK_RATING = 0
-            w.INTELLECT = 0
-            w.SPIRIT = 0
-            w.SPELL_POWER = 0
         elseif cls == "paladin" then
             w.STRENGTH = 0.5
             w.AGILITY = 0.3
             w.ATTACK_POWER = 0.25
             w.INTELLECT = 0.05
-            w.SPIRIT = 0
             w.SPELL_POWER = 0.38
+            w.SPELL_DAMAGE_DONE = 0.2
+            w.HOLY_DAMAGE_DONE = 0.3
             w.MANA_REGENERATION = 0.2
             w.WEAPON_DPS = 2.5
         end
@@ -390,6 +424,11 @@ local function SpecWeights(cls, specId, roleOverride)
         w.NATURE_DAMAGE_DONE = 0
         w.SHADOW_DAMAGE_DONE = 0
     end
+    local okSchool = BG.SCHOOL_OK[cls]
+    for _, sk in ipairs(BG.SCHOOL_KEYS) do
+        if not (okSchool and okSchool[sk]) then w[sk .. "_DAMAGE_DONE"] = 0 end
+    end
+    w.PHYSICAL_DAMAGE_DONE = (w.WEAPON_DPS or 0) * 0.385
     return w
 end
 
@@ -410,6 +449,7 @@ local W_KEYS = {
     { "MANA_REGENERATION", L["5秒回蓝"] }, { "HEALTH_REGEN", L["5秒回血"] },
     { "ATTACK_POWER", L["攻击强度"] }, { "RANGED_ATTACK_POWER", L["远程攻强"] },
     { "WEAPON_DPS", L["武器伤害"] }, { "RANGED_DPS", L["远程武器伤害"] },
+    { "PHYSICAL_DAMAGE_DONE", L["武器伤害加成"], L["武器伤害"] },
     { "SPELL_POWER", L["法术强度"] }, { "SPELL_DAMAGE_DONE", L["法术伤害"] },
     { "SPELL_HEALING_DONE", L["治疗效果"] }, { "SPELL_PENETRATION", L["法术穿透"] },
     { "ARCANE_DAMAGE_DONE", L["奥术伤害"] }, { "FIRE_DAMAGE_DONE", L["火焰伤害"] },
@@ -511,6 +551,7 @@ local tipStatCache = {}
 local function ScanStatsTip(id)
     if type(id) ~= "number" or BG.__dpsDead then return nil end
     local c = tipStatCache[id]
+    if c == false then return nil end
     if c ~= nil then return c end
     if not DG.ItemInfo(id) then return nil end
     if (BG.__dpsDepth or 0) > 0 then return nil end
@@ -543,7 +584,7 @@ local function ScanStatsTip(id)
                     end
                 end
                 for _, wk in ipairs(W_KEYS) do
-                    local k, nm = wk[1], wk[2]
+                    local k, nm = wk[1], (wk[3] or wk[2])
                     if k ~= "WEAPON_DPS" and type(nm) == "string" and nm ~= "" then
                         local nv = MatchStatNum(t, nm)
                         if nv and nv > 0 then out[k] = (out[k] or 0) + nv end
@@ -555,8 +596,8 @@ local function ScanStatsTip(id)
     end)
     BG.__dpsDepth = BG.__dpsDepth - 1
     if not okScan then return nil end
+    tipStatCache[id] = next(out) and out or false
     if not next(out) then return nil end
-    tipStatCache[id] = out
     BG.__statCacheN = (BG.__statCacheN or 0) + 1
     if BG.__statCacheN > 2500 then
         for k in pairs(tipStatCache) do tipStatCache[k] = nil end
@@ -588,6 +629,12 @@ end
 BG.ArmorShare = 12
 BG.ArmorRefW = 0.008
 BG.ArmorRefPerLv = 4
+
+function BG.ArmorRefOf(cap)
+    local lv = math.floor(tonumber(cap) or 60)
+    if lv < 1 then lv = 1 elseif lv > 60 then lv = 60 end
+    return BG.ArmorRefPerLv * lv
+end
 
 function BG.ArmorRef(st, bst)
     local a = type(st) == "table" and st.ARMOR or 0
@@ -763,6 +810,8 @@ local function LoadWeightPrefs()
     BG.wActive = (a and BG.wSchemes[a]) and a or nil
     local r = s.wRole
     BG.wRole = (type(r) == "string" and r ~= "") and r or nil
+    local ts = s.tSpec
+    BG.__tspecSV = (type(ts) == "string" and ts ~= "") and ts or nil
 end
 
 local function SaveWeightPrefs()
@@ -774,6 +823,7 @@ local function SaveWeightPrefs()
     s.wSchemes = list
     s.wActive = BG.wActive
     s.wRole = BG.wRole
+    s.tSpec = BG.tspec
 end
 
 local function BumpWeights()
@@ -953,6 +1003,8 @@ local SLOT_GEAR = {
     shirt = { "Shirt" }, tabard = { "Tabard" },
     ["two-hand"] = { "Two-Hand" }, ["main-hand"] = { "One-Hand", "Main Hand" },
     ["off-hand"] = { "Off Hand", "Held In Off-hand", "Shield" },
+    ["shield"] = { "Shield" },
+    ["off-wep"] = { "One-Hand", "Off Hand" },
     ranged = { "Ranged", "Thrown", "Relic" },
 }
 
@@ -960,32 +1012,67 @@ local USABLE = {
     warrior = { armor = { 1, 2, 3, 4 },
                 weapon = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 13, 15, 16, 18 },
                 shield = true },
-    paladin = { armor = { 1, 2, 3, 4 }, weapon = { 0, 1, 4, 5, 6 },
+    paladin = { armor = { 1, 2, 3, 4 }, weapon = { 0, 1, 4, 5, 6, 7, 8 },
                 shield = true, relic = { 7 } },
     hunter = { armor = { 1, 2, 3 },
-               weapon = { 0, 1, 2, 3, 7, 10, 13, 15, 16, 18 } },
-    rogue = { armor = { 1, 2 }, weapon = { 0, 2, 3, 4, 7, 13, 15, 16, 18 } },
+               weapon = { 0, 1, 2, 3, 6, 7, 8, 10, 13, 15, 16, 18 } },
+    rogue = { armor = { 1, 2 }, weapon = { 2, 3, 4, 7, 13, 15, 16, 18 } },
     priest = { armor = { 1 }, weapon = { 4, 10, 15, 19 } },
     mage = { armor = { 1 }, weapon = { 7, 10, 15, 19 } },
     warlock = { armor = { 1 }, weapon = { 7, 10, 15, 19 } },
-    druid = { armor = { 1, 2 }, weapon = { 4, 5, 10, 13, 15 }, relic = { 8 } },
-    shaman = { armor = { 1, 2, 3 }, weapon = { 0, 1, 4, 5, 6, 10, 13, 15 },
+    druid = { armor = { 1, 2 }, weapon = { 4, 5, 6, 10, 13, 15 }, relic = { 8 } },
+    shaman = { armor = { 1, 2, 3 }, weapon = { 0, 1, 4, 5, 10, 13, 15 },
                shield = true, relic = { 9 } },
 }
+
+function BG.OneHandOnly()
+    if not BG.tspec or BG.tspec ~= "prot" then return false end
+    return BG.cls == "warrior" or BG.cls == "paladin"
+end
+
+function BG.OneOnlyShown()
+    return BG.cls == "hunter"
+        or (BG.cls == "warrior" and (BG.tspec == "arms" or BG.tspec == "fury"))
+end
+
+function BG.OneOnlyLock()
+    return BG.fOneHand == true and BG.fOneOnly == true and BG.OneOnlyShown()
+end
+
+function BG.OneOnly()
+    return BG.OneHandOnly() or BG.OneOnlyLock()
+end
 
 local function InList(list, v)
     for i = 1, #list do if list[i] == v then return true end end
     return false
 end
 
-local function ClassWear(cls, c, u)
+BG.ARMOR_TOP = { warrior = 4, paladin = 4, druid = 2 }
+BG.ARMOR_TOP_MIN_LV = { [4] = 40 }
+BG.ARMOR_SLOTS = { Head = true, Shoulder = true, Chest = true, Wrist = true,
+                   Hands = true, Waist = true, Legs = true, Feet = true }
+
+local function ClassWear(cls, c, u, specKey, slotName, lv)
     local t = USABLE[cls]
     if not t then return true end
     if c == 2 then return InList(t.weapon, u) end
     if c == 4 then
         if u == nil or u == 0 or u == 5 then return true end
         if u == 6 then return t.shield and true or false end
-        if u >= 1 and u <= 4 then return InList(t.armor, u) end
+        if u >= 1 and u <= 4 then
+            if InList(t.armor, u) then
+                local top = BG.ARMOR_TOP[cls]
+                if top then
+                    local need = BG.ARMOR_TOP_MIN_LV[top]
+                    if need and (tonumber(lv) or 60) < need then top = top - 1 end
+                end
+                if top and slotName and BG.ARMOR_SLOTS[slotName]
+                    and u ~= top and RoleOfKey(cls, specKey or BG.tspec) == "tank" then return false end
+                return true
+            end
+            return false
+        end
         if t.relic then return InList(t.relic, u) end
         return false
     end
@@ -1019,7 +1106,8 @@ end
 local UsableCap
 local function CatRowsFor(rkey)
     local cap = UsableCap and UsableCap() or 60
-    local key = rkey .. ":" .. tostring(cap) .. ":" .. BG.cls
+    local key = rkey .. ":" .. tostring(cap) .. ":" .. BG.cls .. ":" .. tostring(BG.instGen or 0)
+        .. ":" .. tostring(BG.tspec or "")
     if catKey == key then return catItems end
     local slots = SLOT_GEAR[rkey]
     local out = {}
@@ -1027,7 +1115,7 @@ local function CatRowsFor(rkey)
     if cat and slots then
         for i = 1, #cat do
             local r = cat[i]
-            if r.s and InList(slots, r.s) and ClassWear(BG.cls, r.c, r.u) and ClsOK(r.id)
+            if r.s and InList(slots, r.s) and ClassWear(BG.cls, r.c, r.u, BG.tspec, r.s, cap) and ClsOK(r.id)
                 and (r.req or 0) <= cap then
                 out[#out + 1] = r
             end
@@ -1039,12 +1127,13 @@ end
 
 function BG.CatRowsForMain()
     local cap = UsableCap and UsableCap() or 60
-    local key = "main+2h:" .. tostring(cap) .. ":" .. tostring(BG.cls)
+    local key = "main+2h:" .. tostring(cap) .. ":" .. tostring(BG.cls) .. ":" .. tostring(BG.instGen or 0)
+        .. ":" .. tostring(BG.OneOnly() and 1 or 0) .. ":" .. tostring(BG.tspec or "")
     local c = BG.__mainRows
     if c and c.key == key then return c.rows end
     local out, seen = {}, {}
     local a, b = CatRowsFor("main-hand"), CatRowsFor("two-hand")
-    for li = 1, 2 do
+    for li = 1, (BG.OneOnly() and 1 or 2) do
         local src = (li == 1) and a or b
         for i = 1, #src do
             local r = src[i]
@@ -1152,6 +1241,262 @@ local function CatKind(id)
         return "rare"
     end
     return "other"
+end
+
+BG.INST_ALIAS = {
+    ["领主大厅"] = "hall_of_thanes",
+    ["怒焰裂谷"] = "ragefire_chasm",
+    ["洛丹伦废墟"] = "ruins_of_lordaeron",
+    ["哀嚎洞穴"] = "wailing_caverns",
+    ["死亡矿井"] = "the_deadmines",
+    ["影牙城堡"] = "shadowfang_keep",
+    ["影牙城堡·席瓦莱恩男爵"] = "shadowfang_keep",
+    ["黑暗深渊"] = "blackfathom_deeps",
+    ["监狱"] = "the_stockade",
+    ["暴风城监狱"] = "the_stockade",
+    ["挖掘场：湿地"] = "excavation_wetlands",
+    ["达拉然城"] = "city_of_dalaran",
+    ["诺莫瑞根"] = "gnomeregan",
+    ["剃刀沼泽"] = "razorfen_kraul",
+    ["血色修道院 - 墓地"] = "sm_graveyard",
+    ["血色修道院 - 图书馆"] = "sm_library",
+    ["血色修道院 - 军械库"] = "sm_armory",
+    ["血色修道院 - 大教堂"] = "sm_cathedral",
+    ["剃刀高地"] = "razorfen_downs",
+    ["奥达曼"] = "uldaman",
+    ["奥达曼·地占师弗林塔格"] = "uldaman",
+    ["祖尔法拉克"] = "zul_farrak",
+    ["玛拉顿"] = "maraudon",
+    ["沉没的神庙"] = "sunken_temple",
+    ["黑石深渊"] = "blackrock_depths",
+    ["厄运之槌 - 东"] = "dire_maul_east",
+    ["厄运之槌 - 西"] = "dire_maul_west",
+    ["厄运之槌 - 北"] = "dire_maul_north",
+    ["黑石塔下层"] = "lower_blackrock_spire",
+    ["黑石塔上层"] = "upper_blackrock_spire",
+    ["通灵学院"] = "scholomance",
+    ["斯坦索姆（主门）"] = "stratholme_main",
+    ["斯坦索姆（后门）"] = "stratholme_service",
+    ["熔火之心"] = "mc",
+    ["黑翼之巢"] = "bwl",
+    ["安其拉神殿"] = "aq40",
+    ["安其拉废墟"] = "aq20",
+    ["祖尔格拉布"] = "zg",
+    ["纳克萨玛斯"] = "naxx",
+    ["奥妮克希亚"] = "ony",
+    ["奥妮克希亚的巢穴"] = "ony",
+    ["艾莫莉丝"] = "emerald",
+    ["伊森德雷"] = "emerald",
+    ["泰拉尔"] = "emerald",
+    ["莱索恩"] = "emerald",
+    ["艾萨拉·艾索雷葛斯"] = "azuregos",
+    ["腐烂之痕·卡扎克"] = "kazzak",
+    ["希利苏斯·奥罗"] = "aq40",
+    ["东瘟疫之地·萨菲隆"] = "naxx",
+    ["荆棘谷·高阶祭司娅尔罗"] = "zg",
+    ["荆棘谷·加兹兰卡"] = "zg",
+    ["荆棘谷·乌苏雷"] = "zg",
+    ["甲虫之墙·拉贾克斯将军"] = "aq40",
+    ["希利苏斯·斯卡德诺克斯王子"] = "silithus",
+    ["希利苏斯·斯古恩男爵"] = "silithus",
+    ["希利苏斯·卡苏姆男爵"] = "silithus",
+    ["希利苏斯·大元帅维拉希斯"] = "silithus",
+    ["奥特兰克山谷·森林之王伊弗斯"] = "av",
+}
+
+BG.INST_BOSS = {
+    ["奈法利安"] = "bwl",
+    ["拉格纳罗斯"] = "mc",
+    ["Lord Valthalak"] = "upper_blackrock_spire",
+    ["瓦塔拉克公爵"] = "upper_blackrock_spire",
+    ["Kormok"] = "scholomance",
+    ["艾莫莉丝"] = "emerald",
+    ["伊森德雷"] = "emerald",
+    ["泰拉尔"] = "emerald",
+    ["莱索恩"] = "emerald",
+    ["奥妮克希亚"] = "ony",
+}
+
+BG.INST_EXTRA = {
+    { key = "mc", name = "熔火之心", nameEn = "Molten Core", nameTw = "熔火之心", group = "raid" },
+    { key = "bwl", name = "黑翼之巢", nameEn = "Blackwing Lair", nameTw = "黑翼之巢", group = "raid" },
+    { key = "aq40", name = "安其拉神殿", nameEn = "Temple of Ahn'Qiraj", nameTw = "安其拉神殿", group = "raid" },
+    { key = "aq20", name = "安其拉废墟", nameEn = "Ruins of Ahn'Qiraj", nameTw = "安其拉廢墟", group = "raid" },
+    { key = "zg", name = "祖尔格拉布", nameEn = "Zul'Gurub", nameTw = "祖爾格拉布", group = "raid" },
+    { key = "naxx", name = "纳克萨玛斯", nameEn = "Naxxramas", nameTw = "納克薩瑪斯", group = "raid" },
+    { key = "ony", name = "奥妮克希亚的巢穴", nameEn = "Onyxia's Lair", nameTw = "奧妮克希亞的巢穴", group = "raid" },
+    { key = "emerald", name = "四绿龙", nameEn = "Emerald Dragons", nameTw = "四綠龍", group = "world" },
+    { key = "azuregos", name = "蓝龙", nameEn = "Azuregos", nameTw = "藍龍", group = "world" },
+    { key = "kazzak", name = "卡扎克", nameEn = "Lord Kazzak", nameTw = "卡扎克", group = "world" },
+    { key = "silithus", name = "安其拉开门首领", nameEn = "Ahn'Qiraj War Leaders", nameTw = "安其拉開門首領", group = "world" },
+    { key = "av", name = "奥特兰克山谷首领", nameEn = "Alterac Valley Bosses", nameTw = "奧特蘭克山谷首領", group = "world" },
+}
+
+BG.INST_FIX = { onyxias_lair = "ony" }
+
+BG.INST_DOT = "\194\183"
+
+function BG.InstKeyOf(place, kind)
+    if type(place) == "string" and place ~= "" then
+        local k = BG.INST_ALIAS[place]
+        if k then return k end
+        local pos = string.find(place, BG.INST_DOT, 1, true)
+        if pos and pos > 1 then
+            local head = string.sub(place, 1, pos - 1)
+            if BG.INST_ALIAS[head] then return BG.INST_ALIAS[head] end
+        end
+        if BG.INST_BOSS[place] then return BG.INST_BOSS[place] end
+    end
+    if type(kind) == "string" and kind ~= "" then
+        if BG.INST_BOSS[kind] then return BG.INST_BOSS[kind] end
+        if BG.INST_ALIAS[kind] then return BG.INST_ALIAS[kind] end
+    end
+    return nil
+end
+
+function BG.InstNameHit(place, core, ...)
+    local n = #place
+    local tail = string.find(place, "%a") ~= nil
+    for i = 1, select("#", ...) do
+        local s = select(i, ...)
+        if type(s) == "string" and s ~= "" then
+            if place == s or core == s then return true end
+            if string.find(place, s, 1, true) then return true end
+            if string.sub(s, 1, n) == place then return true end
+            if tail and string.sub(s, -n) == place then return true end
+        end
+    end
+    return false
+end
+
+function BG.InstKeysOf(place, kind, def)
+    local out, seen = {}, {}
+    local k0 = BG.InstKeyOf(place, kind)
+    if k0 and def[k0] then
+        out[1] = k0
+        return k0
+    end
+    if type(place) == "string" and place ~= "" then
+        local core = BG.NameCore(place)
+        for k, e in pairs(def) do
+            if not seen[k] and e.group ~= "world"
+                and BG.InstNameHit(place, core, e.name, e.nameEn, e.nameTw) then
+                seen[k] = true
+                out[#out + 1] = k
+            end
+        end
+    end
+    if #out == 0 then return nil end
+    if #out == 1 then return out[1] end
+    return out
+end
+
+function BG.InstBuild()
+    if BG.__instDefs then return BG.__instDefs, BG.__instDef end
+    local defs, def = { dungeon = {}, raid = {}, world = {} }, {}
+    local d = ns.DungeonData and ns.DungeonData.dungeons
+    if type(d) == "table" then
+        for i = 1, #d do
+            local e = d[i]
+            if type(e.id) == "string" then
+                local rec = { key = e.id, name = e.name, nameEn = e.nameEn,
+                              group = "dungeon", open = true, n = 0 }
+                defs.dungeon[#defs.dungeon + 1] = rec
+                def[rec.key] = rec
+            end
+        end
+    end
+    for i = 1, #BG.INST_EXTRA do
+        local s = BG.INST_EXTRA[i]
+        local rec = { key = s.key, name = s.name, nameEn = s.nameEn,
+                      group = s.group, open = (s.open == true), n = 0 }
+        defs[s.group][#defs[s.group] + 1] = rec
+        def[s.key] = rec
+    end
+    local map = {}
+    local gs = ns.EnsureGearSrc and ns.EnsureGearSrc()
+    if type(gs) == "table" then
+        for id, src in pairs(gs) do
+            if type(src) == "string" and src ~= "" then
+                local ck = CatKind(id)
+                if ck == "boss" or ck == "quest" then
+                    local kind, place = string.match(src, "^(.-)|(.*)$")
+                    if not kind then kind, place = src, "" end
+                    local k = BG.InstKeysOf(place, kind, def)
+                    if k then
+                        map[id] = k
+                        if ck == "boss" then
+                            if type(k) == "table" then
+                                for i = 1, #k do def[k[i]].n = def[k[i]].n + 1 end
+                            else
+                                def[k].n = def[k].n + 1
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    BG.__instDefs, BG.__instDef, BG.__instItem = defs, def, map
+    return defs, def
+end
+
+function BG.InstDefs()
+    return BG.InstBuild()
+end
+
+function BG.InstLabel(e)
+    local lc = (type(DF_Locale) == "function") and DF_Locale() or "zhCN"
+    if lc == "enUS" and type(e.nameEn) == "string" and e.nameEn ~= "" then
+        return e.nameEn
+    end
+    return e.name or e.nameEn or ""
+end
+
+function BG.InstOpen(e)
+    return e.open == true
+end
+
+function BG.InstOf(id)
+    if not BG.__instItem then BG.InstBuild() end
+    local k = BG.__instItem and BG.__instItem[id]
+    if k then return k end
+    local gm = ns.GearModule
+    local so = gm and gm.srcOf and gm.srcOf[id]
+    local iid = so and so.inst and so.inst.id
+    if type(iid) == "string" and iid ~= "" then
+        return BG.INST_FIX[iid] or iid
+    end
+    return nil
+end
+
+function BG.InstAllowed(set, id)
+    local key = BG.InstOf(id)
+    if key == nil then return true end
+    if type(key) == "table" then
+        for i = 1, #key do
+            if set and set[key[i]] == true then return true end
+        end
+        return false
+    end
+    return (set and set[key] == true) or false
+end
+
+function BG.InstPass(id)
+    if BG.instReady ~= true then return true end
+    return BG.InstAllowed(BG.instSet, id)
+end
+
+function BG.InstCount()
+    local sel, tot = 0, 0
+    local defs = BG.InstDefs()
+    for _, list in pairs(defs) do
+        for i = 1, #list do
+            tot = tot + 1
+            if BG.instSet and BG.instSet[list[i].key] then sel = sel + 1 end
+        end
+    end
+    return sel, tot
 end
 
 local function CatSrcText(id)
@@ -1287,6 +1632,8 @@ local function LoadFilterPrefs()
     local s = DB()
     if s.fOnlyUsable == nil then s.fOnlyUsable = true end
     BG.onlyUsable = s.fOnlyUsable and true or false
+    BG.fOneHand = (s.fOneHand == true)
+    BG.fOneOnly = (s.fOneOnly == true)
     local lv = s.fFilterLv
     BG.filterLv = (type(lv) == "number" and lv >= 1 and lv <= 60) and math.floor(lv) or nil
     if s.fSrcVer ~= 3 then
@@ -1303,17 +1650,52 @@ local function LoadFilterPrefs()
     for _, f in ipairs(FILTERS) do
         BG.srcSet[f.id] = (s.fSrcSet[f.id] == true)
     end
+    local defs = BG.InstDefs()
+    local known = (type(s.fInstKnown) == "table") and s.fInstKnown or {}
+    local stored = (type(s.fInstSet) == "table") and s.fInstSet or {}
+    if s.fInstVer ~= 1 then
+        s.fInstVer = 1
+        known, stored = {}, {}
+    end
+    BG.instSet = {}
+    for _, list in pairs(defs) do
+        for i = 1, #list do
+            local e = list[i]
+            if known[e.key] == nil then
+                known[e.key] = true
+                stored[e.key] = BG.InstOpen(e) or nil
+            end
+            BG.instSet[e.key] = (stored[e.key] == true)
+        end
+    end
+    s.fInstKnown = known
+    s.fInstSet = stored
+    BG.instGen = (BG.instGen or 0) + 1
+    BG.instReady = true
 end
 
 local function SaveFilterPrefs()
     local s = DB()
     s.fOnlyUsable = BG.onlyUsable and true or nil
+    s.fOneHand = BG.fOneHand and true or nil
+    s.fOneOnly = BG.fOneOnly and true or nil
     s.fFilterLv = BG.filterLv
     local ss = {}
     for _, f in ipairs(FILTERS) do
         if BG.srcSet[f.id] then ss[f.id] = true end
     end
     s.fSrcSet = ss
+    local it = {}
+    for k, v in pairs(BG.instSet or {}) do
+        if v then it[k] = true end
+    end
+    s.fInstSet = it
+end
+
+function BG.OneHandMode()
+    if BG.fOneHand ~= true then return false end
+    if BG.cls == "warrior" then return BG.tspec == "fury" end
+    return BG.cls == "hunter"
 end
 
 local function PlayerLevel()
@@ -1403,7 +1785,7 @@ end
 
 local function TSpecLabel()
     for _, sr in ipairs(SPEC_DIR[BG.cls] or {}) do
-        if sr.key == BG.tspec then return L[sr.label] or sr.label end
+        if sr.key == BG.tspec then return BG.SpecTabName(sr) end
     end
     return SpecLabel()
 end
@@ -1429,6 +1811,7 @@ local function SideHas(sp, slotKey, side)
 end
 
 local function MainKey(sp, side)
+    if BG.OneOnly() then return "main-hand" end
     if not sp then return "main-hand" end
     side = side or CurSide()
     if SideHas(sp, "two-hand", side) then return "two-hand" end
@@ -1439,20 +1822,35 @@ end
 
 function BG.MainDisp(sp)
     local cur = BG.cur
+    local lock = BG.OneOnly()
     if cur then
-        if cur["two-hand"] then return "two-hand" end
+        if cur["two-hand"] and not lock then return "two-hand" end
         if cur["main-hand"] then return "main-hand" end
     end
     local pl = BG.usingPlan
     if pl and pl.items then
-        if pl.items["two-hand"] then return "two-hand" end
+        if pl.items["two-hand"] and not lock then return "two-hand" end
         if pl.items["main-hand"] then return "main-hand" end
     end
     return MainKey(sp)
 end
 
+function BG.FixDupTrinket(t)
+    if type(t) ~= "table" then return false end
+    if t["trinket"] and t["trinket2"] and t["trinket"] == t["trinket2"] then
+        t["trinket2"] = nil
+        return true
+    end
+    return false
+end
+
 function BG.FixWeaponPair(t)
-    if type(t) ~= "table" or not t["two-hand"] then return false end
+    if type(t) ~= "table" then return false end
+    if BG.OneOnly() and t["two-hand"] then
+        t["two-hand"] = nil
+        return true
+    end
+    if not t["two-hand"] then return false end
     local had = t["main-hand"] ~= nil or t["off-hand"] ~= nil
         or t["held"] ~= nil or t["shield"] ~= nil
     t["main-hand"] = nil
@@ -1463,6 +1861,8 @@ function BG.FixWeaponPair(t)
 end
 
 local function OffKey(sp, side)
+    if BG.OneHandOnly() then return "shield" end
+    if BG.OneOnlyLock() then return "off-hand" end
     if not sp then return "off-hand" end
     side = side or CurSide()
     for _, k in ipairs({ "off-hand", "held", "shield" }) do
@@ -1495,12 +1895,17 @@ end
 local function CurItem(sp, slotKey)
     if slotKey == "off" and BG.MainDisp(sp) == "two-hand" then return nil end
     local dk = (slotKey == "main") and BG.MainDisp(sp) or DataKey(sp, slotKey)
-    local id = BG.cur[dk]
-    if id then return id end
     local pl = BG.usingPlan
-    if pl and pl.items and pl.items[dk] then return pl.items[dk] end
-    if BG.usingPlan == nil and BG.autoPlan == nil then return RecItem(sp, dk) end
-    return nil
+    local v = BG.cur[dk]
+    if not v and pl and pl.items then v = pl.items[dk] end
+    if not v and BG.usingPlan == nil and BG.autoPlan == nil then v = RecItem(sp, dk) end
+    if v and dk == "trinket2" then
+        local o = BG.cur["trinket"]
+        if not o and pl and pl.items then o = pl.items["trinket"] end
+        if not o and BG.usingPlan == nil and BG.autoPlan == nil then o = RecItem(sp, "trinket") end
+        if o and o == v then return nil end
+    end
+    return v
 end
 
 local ENCH_SLOTS = {
@@ -1536,7 +1941,7 @@ local function KitEff(text)
     if sp then parts[#parts + 1] = L["法术强度"] .. " +" .. sp end
     if def then parts[#parts + 1] = L["防御技能"] .. " +" .. def end
     if arm then parts[#parts + 1] = L["护甲"] .. " +" .. arm end
-    return table.concat(parts, "，")
+    return table.concat(parts, L["，"])
 end
 
 local function EnsureEnchDB()
@@ -1781,7 +2186,7 @@ local function EnchTip(owner, e)
         for _, m in ipairs(e.mats) do
             parts[#parts + 1] = (DG.ItemName(m[1]) or tostring(m[1])) .. " x" .. tostring(m[2] or 1)
         end
-        GameTooltip:AddLine(format(L["材料：%s"], table.concat(parts, "、")), 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine(format(L["材料：%s"], table.concat(parts, L["、"])), 0.7, 0.7, 0.7, true)
     end
     GameTooltip:Show()
 end
@@ -1827,7 +2232,7 @@ local function SrcText(src)
         return who .. (src.dung or L["副本"]) .. (src.rate and (" · " .. src.rate) or "")
     elseif t == "craft" then
         local pn = PROF_NAMES[src.prof] or src.prof or L["制造"]
-        return pn .. (src.lvl and format("（%d）", src.lvl) or "")
+        return pn .. (src.lvl and format(L["（%d）"], src.lvl) or "")
             .. (src.note and (" · " .. src.note) or "")
     elseif t == "rare" then
         return L["稀有 · "] .. (src.note or "")
@@ -1883,7 +2288,7 @@ local function PaintTopbar()
             local sr = dir[i]
             if sr then
                 bt:SetShown(true)
-                bt:SetText(L[sr.label] or sr.label)
+                bt:SetText(BG.SpecTabName(sr))
                 if bt.__icon then bt.__icon:SetTexture(sr.icon) end
                 local on = (sr.role == "tank" and BG.spec == "tank")
                     or (sr.role ~= "tank" and BG.spec ~= "tank" and BG.tspec == sr.key)
@@ -1927,7 +2332,12 @@ local function PaintDoll()
             cell.icon:SetTexture(ItemIcon(id))
             cell.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
             if ns.hui and ns.hui.SetIconRing then ns.hui.SetIconRing(cell.icon, { ns.hui.QColor(ItemQuality(sp, id, q)) }) end
-            cell.name:SetText(DG.ItemName(id))
+            local nm, named = DG.ItemName(id)
+            cell.name:SetText(nm)
+            if not named then
+                BG.needNames = true
+                if DG.RequestItem then DG.RequestItem(id) end
+            end
             cell.name:SetTextColor(Unpack(QColor(ItemQuality(sp, id, q))))
         end
         local capLv = nil
@@ -1943,6 +2353,18 @@ local function PaintDoll()
             ns.hui.HuiCardState(cell, (sel or cell:IsMouseOver()) and "hover" or "norm")
         end
         cell.dot:SetShown(not empty and BG.cur[dkey] ~= nil)
+    end
+    if BG.oneHandTg then
+        local show = BG.OneOnlyShown()
+        BG.oneHandTg:SetShown(show)
+        if BG.oneHandLbl then BG.oneHandLbl:SetShown(show) end
+        BG.oneHandTg:SetChecked(BG.fOneHand and true or false)
+    end
+    if BG.oneOnlyTg then
+        local show = BG.OneOnlyShown() and BG.fOneHand == true
+        BG.oneOnlyTg:SetShown(show)
+        if BG.oneOnlyLbl then BG.oneOnlyLbl:SetShown(show) end
+        BG.oneOnlyTg:SetChecked(BG.fOneOnly and true or false)
     end
 end
 
@@ -1991,7 +2413,7 @@ local AUTO_BUDGET_MS = 6
 local AUTO_TOP_N = 40
 
 BG.AUTO_SRC = { dungeon = AUTO_SRC_DG, known = AUTO_SRC_KNOWN, dq = AUTO_SRC_DQ }
-BG.AUTO_GEN_REV = 7
+BG.AUTO_GEN_REV = 18
 
 local function ClampLv(lv)
     lv = math.floor(tonumber(lv) or 60)
@@ -2047,6 +2469,7 @@ local function ManualPut(items, cls, tspec, lv, srcSet)
     p.tspec = tspec
     p.vol = lv
     BG.FixWeaponPair(items)
+    BG.FixDupTrinket(items)
     p.items = CopyCur(items)
     local ss = {}
     for k, v in pairs(srcSet or {}) do ss[k] = v end
@@ -2091,6 +2514,10 @@ local function AutoSig(mode, cap)
         tostring(BG.cls or ""),
         tostring(BG.spec or ""), tostring(BG.tspec or ""), tostring(mode),
         tostring(cap), tostring(BG.wGen or 0), tostring(BG.wActive or 0),
+        tostring((BG.OneHandMode and BG.OneHandMode() and 1 or 0)
+            + (BG.OneHandOnly and BG.OneHandOnly() and 2 or 0)
+            + (BG.OneOnlyLock and BG.OneOnlyLock() and 4 or 0)),
+        tostring(BG.instGen or 0),
         PlayerFac() or "" }, "|")
 end
 
@@ -2131,6 +2558,7 @@ end
 local function AutoStore(mode, cap, sig, items, cls)
     if not autoSnapsLoaded then LoadAutoSnaps() end
     BG.FixWeaponPair(items)
+    BG.FixDupTrinket(items)
     autoSnaps[sig] = { sig = sig, mode = mode, cls = cls, lv = cap,
                        t = NowSec(), items = CopyCur(items) }
     SaveAutoSnaps()
@@ -2269,6 +2697,13 @@ local function AutoRawOK(id, cap)
     return true
 end
 
+function BG.AutoInstOK(job, id, kind)
+    if kind ~= "boss" and kind ~= "quest" then return true end
+    local set = job.instSet
+    if not set then return true end
+    return BG.InstAllowed(set, id)
+end
+
 local function AutoBuckets(job)
     local cat = job.cat
     if not cat or job.total < 1 then return true end
@@ -2276,9 +2711,11 @@ local function AutoBuckets(job)
     while i < job.total do
         i = i + 1
         local r = cat[i]
-        if r.s and ClassWear(job.cls, r.c, r.u) and ClsOK(r.id) and (r.req or 0) <= job.cap
+        local kind = AutoKind(r.id)
+        if r.s and ClassWear(job.cls, r.c, r.u, job.tspec, r.s, job.cap) and ClsOK(r.id) and (r.req or 0) <= job.cap
             and AutoRawOK(r.id, job.cap)
-            and not (job.srcSet and not job.srcSet[AutoKind(r.id)]) then
+            and not (job.srcSet and not job.srcSet[kind])
+            and BG.AutoInstOK(job, r.id, kind) then
             local b = job.buckets[r.s]
             if not b then
                 b = {}
@@ -2338,13 +2775,23 @@ local function AutoPick(job)
         if not job.curKey then
             job.curKey = keys[job.ki]
             job.dk = DataKey(job.sp, job.curKey)
+            if job.dual and job.curKey == "main-hand" then job.dk = "main-hand" end
             if job.curKey == "off-hand" and job.mk == "two-hand" then
                 job.cur[job.dk] = nil
+                job.ki = job.ki + 1
+                job.curKey = nil
+            elseif (job.dual or job.oneLock) and job.curKey == "two-hand" then
+                job.cur[job.dk] = nil
+                job.ki = job.ki + 1
+                job.curKey = nil
+            elseif job.oneOnly and job.curKey == "two-hand" then
                 job.ki = job.ki + 1
                 job.curKey = nil
             else
                 local rkey = RowsKey(job.curKey)
                 if rkey == "main-hand" then rkey = job.mk end
+                if (job.dual or job.oneLock) and rkey == "off-hand" then rkey = "off-wep" end
+                if job.shield and rkey == "off-hand" then rkey = "shield" end
                 job.groups = SLOT_GEAR[rkey] or {}
                 job.gi, job.bi = 1, 1
                 job.best, job.bestScore = nil, nil
@@ -2391,8 +2838,12 @@ local function AutoPick(job)
                 else
                     job.bi = job.bi + 1
                     if UsableAt(r.id, job.cap, r.req or 0) and not job.usedQ[r.id]
+                        and not ((job.dual or job.oneLock) and job.curKey == "off-hand"
+                            and r.id == job.cur["main-hand"])
+                        and not ((job.curKey == "trinket" and r.id == job.cur["trinket2"])
+                            or (job.curKey == "trinket2" and r.id == job.cur["trinket"]))
                         and StatsKnown(r.id) then
-                        local sc = ItemScore(r.id, job.w)
+                        local sc = ItemScore(r.id, job.w, nil, job.armorRef)
                         if sc and (job.bestScore == nil or sc > job.bestScore) then
                             job.best, job.bestScore = r.id, sc
                         end
@@ -2480,13 +2931,29 @@ local function AutoPump(jobId)
     C_Timer.After(wait, function() AutoPump(jobId) end)
 end
 
+function BG.AutoInstCopy()
+    if BG.instReady ~= true then return nil end
+    local t = {}
+    for k, v in pairs(BG.instSet) do
+        if v then t[k] = true end
+    end
+    return t
+end
+
 local function AutoJobStart(mode, cap, sig, srcSet)
     autoJobSeq = autoJobSeq + 1
     local sp = SpecRec()
     if not sp then return end
+    local dual = (BG.OneHandMode and BG.OneHandMode()) and true or nil
     autoJob = {
         id = autoJobSeq, mode = mode, cap = cap, sig = sig,
-        cls = BG.cls, tspec = BG.tspec, sp = sp, mk = MainKey(sp), w = EffWeights(),
+        cls = BG.cls, tspec = BG.tspec, sp = sp,
+        mk = dual and "main-hand" or MainKey(sp), dual = dual, w = EffWeights(),
+        armorRef = BG.ArmorRefOf(cap),
+        shield = BG.OneHandOnly() or nil,
+        oneOnly = BG.OneOnly() or nil,
+        oneLock = BG.OneOnlyLock() or nil,
+        instSet = BG.AutoInstCopy(),
         srcSet = srcSet or ((mode == "dungeon") and AUTO_SRC_DG)
             or ((mode == "known") and AUTO_SRC_KNOWN)
             or ((mode == "dq") and AUTO_SRC_DQ) or nil,
@@ -2537,6 +3004,8 @@ function BG.UseManualPlan()
     end
     BG.usingPlan = p
     BG.autoPlan = nil
+    BG._sweepFails = 0
+    BG._sweepMiss = nil
     if not (autoJob and autoJob.mode == "manual") then AutoJobCancel() end
     BG.RequestRender()
 end
@@ -3167,7 +3636,7 @@ function FillBwRow(r)
     end
     if gm and gm.WishIs then
         local on = gm.WishIs(row.item)
-        r.wishBt.star:SetText(on and "★" or "☆")
+        r.wishBt.star:SetText(on and ns.SYM.star or ns.SYM.star0)
         if on then
             r.wishBt.star:SetTextColor(1, 0.82, 0, 1)
         else
@@ -3188,6 +3657,10 @@ local function PaintBrowser()
     if rkey == "main-hand" then
         rkey = MainKey(sp)
         mainBoth = (BG.sel == "main")
+    elseif rkey == "off-hand" and BG.OneHandOnly() then
+        rkey = "shield"
+    elseif rkey == "off-hand" and BG.OneOnlyLock() then
+        rkey = "off-wep"
     end
     local offLocked = (BG.sel == "off" and BG.MainDisp(sp) == "two-hand")
     BG.offLocked = offLocked
@@ -3200,13 +3673,15 @@ local function PaintBrowser()
     if BG.sel and rkey and not offLocked then
         local w = EffWeights()
         local lv = BG.onlyUsable and (BG.filterLv or PlayerLevel() or 60) or nil
+        local aref = BG.ArmorRefOf(lv or 60)
         local baseId = CurItem(sp, BG.sel)
-        BG.baseScore = baseId and ItemScore(baseId, w) or nil
+        BG.baseScore = baseId and ItemScore(baseId, w, nil, aref) or nil
         BG.baseId = baseId
         local pool = {}
         for _, r in ipairs(mainBoth and BG.CatRowsForMain() or CatRowsFor(rkey)) do
             local kind = CatKind(r.id)
             local pass = not (next(BG.srcSet) ~= nil and not BG.srcSet[kind])
+            if pass and (kind == "boss" or kind == "quest") and not BG.InstPass(r.id) then pass = false end
             if pass and lv and not UsableAt(r.id, lv, r.req or 0) then pass = false end
             if pass and BG.search ~= "" then
                 local nm = string.lower(DG.ItemName(r.id) or "")
@@ -3219,7 +3694,7 @@ local function PaintBrowser()
         BG.scanBudget = 0
         for i = 1, #pool do
             local r = pool[i]
-            sMap[r] = ItemScore(r.id, w)
+            sMap[r] = ItemScore(r.id, w, nil, aref)
         end
         BG.scanBudget = nil
         table.sort(pool, function(a, b)
@@ -3233,7 +3708,7 @@ local function PaintBrowser()
             return (a.req or 0) < (b.req or 0)
         end)
         local isWep = rkey == "main-hand" or rkey == "two-hand"
-            or rkey == "off-hand" or rkey == "ranged"
+            or rkey == "off-hand" or rkey == "off-wep" or rkey == "ranged"
         BG.baseWep = isWep
         local cap = 120
         for i = 1, #pool do
@@ -3378,8 +3853,15 @@ function BG.Render()
     if not BG.built then return end
     EnsureBIS()
     BG.FixWeaponPair(BG.cur)
+    BG.FixDupTrinket(BG.cur)
     if not BG.vol then BG.vol = DefaultVol() end
     if not BG.sel then BG.sel = SLOTS_LEFT[1] end
+    if not BG.tspec and BG.__tspecSV then
+        for _, sr in ipairs(SPEC_DIR[BG.cls] or {}) do
+            if sr.key == BG.__tspecSV then BG.tspec = sr.key break end
+        end
+        if BG.tspec and RoleOfKey(BG.cls, BG.tspec) == "tank" then BG.spec = "tank" end
+    end
     if not BG.tspec then
         local tk, nt
         for _, sr in ipairs(SPEC_DIR[BG.cls] or {}) do
@@ -3423,6 +3905,7 @@ end
 
 function BG.Open()
     if not BG.built then return end
+    if BG.SyncFilterPop then BG.SyncFilterPop() end
     BG._sweepFails = 0
     BG.__wantDefault = nil
     if not BG.usingPlan then BG.UseAutoPlan(BG.autoPlan or "dungeon") end
@@ -3438,6 +3921,7 @@ end
 function BG.ToggleFilterPop()
     if not BG.filterPop then return end
     local show = not BG.filterPop:IsShown()
+    if show and BG.InstView then BG.InstView(false) end
     BG.filterPop:SetShown(show)
     if BG.filterBtn then
         SetButtonSelected(BG.filterBtn, show)
@@ -3450,6 +3934,11 @@ function BG.SyncFilterPop()
     if BG.filterLvBox then
         BG.filterLvBox:SetText(BG.filterLv and tostring(BG.filterLv) or "")
     end
+    if BG.instBtnLbl then
+        local sel, tot = BG.InstCount()
+        BG.instBtnLbl:SetText(format(L["已选 %d/%d"], sel, tot))
+    end
+    if BG.PaintInstRows and BG.instView then BG.PaintInstRows() end
     for id, bt in pairs(BG.srcRows or {}) do
         local on = BG.srcSet[id] and true or false
         bt.ring:SetShown(not on)
@@ -3584,6 +4073,7 @@ end
 
 function BG.SetSlot(slotKey, itemID)
     if not slotKey then return end
+    if itemID and BG.OneOnly() and BG.SlotOfAny and BG.SlotOfAny(itemID) == "two-hand" then return end
     local sp = SpecRec()
     local dk = DataKey(sp, slotKey)
     if slotKey == "off" then
@@ -3593,7 +4083,7 @@ function BG.SetSlot(slotKey, itemID)
         if itemID == nil then
             BG.cur["two-hand"] = nil
             BG.cur["main-hand"] = nil
-        elseif BG.SlotOfAny and BG.SlotOfAny(itemID) == "two-hand" then
+        elseif BG.SlotOfAny and BG.SlotOfAny(itemID) == "two-hand" and not BG.OneHandOnly() then
             dk = "two-hand"
             BG.cur["main-hand"] = nil
             BG.cur["off-hand"] = nil
@@ -3604,7 +4094,16 @@ function BG.SetSlot(slotKey, itemID)
             BG.cur["two-hand"] = nil
         end
     end
-    if itemID == nil then BG.cur[dk] = nil else BG.cur[dk] = itemID end
+    if itemID == nil then
+        BG.cur[dk] = nil
+    else
+        BG.cur[dk] = itemID
+        if dk == "trinket" and BG.cur["trinket2"] == itemID then
+            BG.cur["trinket2"] = nil
+        elseif dk == "trinket2" and BG.cur["trinket"] == itemID then
+            BG.cur["trinket"] = nil
+        end
+    end
     BG.RequestRender()
 end
 
@@ -3682,6 +4181,7 @@ function BG.SavePlan()
         end
     end
     BG.FixWeaponPair(items)
+    BG.FixDupTrinket(items)
     local enchs = {}
     for _, dk in ipairs(ALL_SLOT_KEYS) do
         local eid = CurEnch(sp, dk)
@@ -3745,6 +4245,8 @@ function BG.UsePlan(plan)
             end
         end
     end
+    BG._sweepFails = 0
+    BG._sweepMiss = nil
     BG.RequestRender()
 end
 
@@ -3754,6 +4256,11 @@ function BG.ResetToRec()
     BG.usingPlan = nil
     BG.autoPlan = nil
     BG.AutoJobCancel()
+    local sp = SpecRec()
+    if sp and BG.tspec and sp.tspec ~= BG.tspec then
+        BG.UseAutoPlan("dungeon")
+        return
+    end
     BG.RequestRender()
 end
 
@@ -3837,7 +4344,7 @@ function BG.SweepNames()
     BG.scanBudget = nil
     local prevMiss = BG._sweepMiss
     BG._sweepMiss = miss
-    if not prevMiss or miss < prevMiss then
+    if miss < 1 or prevMiss == nil or miss < prevMiss then
         BG._sweepFails = 0
     else
         BG._sweepFails = math.min((BG._sweepFails or 0) + 1, 6)
@@ -3864,15 +4371,18 @@ function BG.ScheduleSweep()
 end
 
 function BG.OnItemData()
-    if not BG.built or BG._itemRepaint then return end
-    if not ns.PageVisible(BG.page) then return end
+    if not BG.built then return end
     BG.needNames = true
-    local evtNow = (type(GetTime) == "function") and GetTime() or 0
-    if BG.__evtT and (evtNow - BG.__evtT) < 1 then return end
-    BG.__evtT = evtNow
+    if not ns.PageVisible(BG.page) then return end
+    if BG._itemRepaint then return end
+    local nowMs = 0
+    if type(debugprofilestop) == "function" then nowMs = debugprofilestop() end
+    local wait = 0.05
+    if nowMs > 0 and BG.__evtT and (nowMs - BG.__evtT) < 250 then wait = 0.25 end
+    BG.__evtT = nowMs
     BG._itemRepaint = true
     if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
-        C_Timer.After(0.05, function()
+        C_Timer.After(wait, function()
             BG._itemRepaint = false
             if BG.needNames then BG.SweepNames() end
         end)
@@ -3958,7 +4468,7 @@ function BG.OpenClassMenu(owner)
                 math.floor(rc.b * 255 + 0.5))
         end
         items[#items + 1] = {
-            text = (c.slug == BG.cls and "● " or "") .. ClassName(c.slug),
+            text = (c.slug == BG.cls and (ns.SYM.dot .. " ") or "") .. ClassName(c.slug),
             color = color,
             func = function() BG.SelectClass(c.slug) end,
         }
@@ -4161,6 +4671,56 @@ local function BuildDoll(parent, lt)
     off:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, -(wy + 44 + 8))
     off:SetScript("OnClick", ClickSlot("off"))
     BG.dollCells["off"] = off
+    local tg = CreateFrame("CheckButton", nil, parent)
+    tg:SetSize(36, 20)
+    tg:EnableMouse(true)
+    if ns.hui and ns.hui.ReskinToggle then ns.hui.ReskinToggle(tg) end
+    tg:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, -(wy + 44 + 8 + 44 + 6))
+    if tg.SetHitRectInsets then tg:SetHitRectInsets(-8, -110, -6, -6) end
+    tg:SetScript("OnClick", function(self)
+        BG.fOneHand = not BG.fOneHand
+        self:SetChecked(BG.fOneHand)
+        SaveFilterPrefs()
+        ns.PlaySound(1)
+        if BG.usingPlan == nil and BG.autoPlan then
+            BG.UseAutoPlan(BG.autoPlan)
+        else
+            BG.RequestRender()
+        end
+    end)
+    tg:SetChecked(BG.fOneHand and true or false)
+    BG.oneHandTg = tg
+    local tl = MakeFS(parent, 14, C_TEXT, "LEFT")
+    tl:SetPoint("LEFT", tg, "RIGHT", 6, 0)
+    tl:SetWordWrap(false)
+    tl:SetText(L["推荐单手武器"])
+    BG.oneHandLbl = tl
+    local tg2 = CreateFrame("CheckButton", nil, parent)
+    tg2:SetSize(36, 20)
+    tg2:EnableMouse(true)
+    if ns.hui and ns.hui.ReskinToggle then ns.hui.ReskinToggle(tg2) end
+    tg2:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, -(wy + 44 + 8 + 44 + 6 + 25))
+    if tg2.SetHitRectInsets then tg2:SetHitRectInsets(-8, -120, -6, -6) end
+    tg2:SetScript("OnClick", function(self)
+        BG.fOneOnly = not BG.fOneOnly
+        self:SetChecked(BG.fOneOnly)
+        SaveFilterPrefs()
+        ns.PlaySound(1)
+        if BG.usingPlan == nil and BG.autoPlan then
+            BG.UseAutoPlan(BG.autoPlan)
+        else
+            BG.RequestRender()
+        end
+    end)
+    tg2:SetChecked(BG.fOneOnly and true or false)
+    tg2:Hide()
+    BG.oneOnlyTg = tg2
+    local tl2 = MakeFS(parent, 14, C_TEXT, "LEFT")
+    tl2:SetPoint("LEFT", tg2, "RIGHT", 6, 0)
+    tl2:SetWordWrap(false)
+    tl2:SetText(L["仅推荐单手武器"])
+    tl2:Hide()
+    BG.oneOnlyLbl = tl2
     return wy + 44 + 8 + 44
 end
 
@@ -4561,7 +5121,6 @@ local function BuildBrowser(parent)
         end)
     end
     local pop = CreateFrame("Frame", nil, parent)
-    pop:SetSize(170, 330)
     pop:EnableMouse(true)
     pop:SetFrameLevel(baseLv + 31)
     pop:Hide()
@@ -4573,17 +5132,27 @@ local function BuildBrowser(parent)
     pop:SetPoint("TOPRIGHT", parent, "TOPLEFT", -8, -40)
     if ns.hui and ns.hui.SkinShadow then ns.hui.SkinShadow(pop) end
     BG.filterPop = pop
+    BG.FILTER_W, BG.FILTER_H = 170, 354
+    BG.INST_W, BG.INST_H = 232, 400
+    pop:SetSize(BG.FILTER_W, BG.FILTER_H)
 
-    local ty = MakeFS(pop, 14, C_GOLD, "LEFT")
-    ty:SetPoint("TOPLEFT", pop, "TOPLEFT", 8, -8)
+    local va = CreateFrame("Frame", nil, pop)
+    va:SetAllPoints()
+    local vb = CreateFrame("Frame", nil, pop)
+    vb:SetAllPoints()
+    vb:Hide()
+    BG.filterA, BG.filterB = va, vb
+
+    local ty = MakeFS(va, 14, C_GOLD, "LEFT")
+    ty:SetPoint("TOPLEFT", va, "TOPLEFT", 8, -8)
     ty:SetText(L["过滤器"])
 
-    local ly = MakeFS(pop, 14, C_GREY, "LEFT")
-    ly:SetPoint("TOPLEFT", pop, "TOPLEFT", 8, -28)
+    local ly = MakeFS(va, 14, C_GREY, "LEFT")
+    ly:SetPoint("TOPLEFT", va, "TOPLEFT", 8, -28)
     ly:SetText(L["目标等级"])
-    local eb = ns.CreateEditBox and ns.CreateEditBox(pop, 52) or nil
+    local eb = ns.CreateEditBox and ns.CreateEditBox(va, 52) or nil
     if eb then
-        eb:SetPoint("TOPLEFT", pop, "TOPLEFT", 8, -42)
+        eb:SetPoint("TOPLEFT", va, "TOPLEFT", 8, -42)
         eb:SetNumeric(true)
     end
     local lvBox = eb
@@ -4611,13 +5180,13 @@ local function BuildBrowser(parent)
             self:ClearFocus()
         end)
         lvBox:SetScript("OnEditFocusLost", function(self)
-            if self.RestoreBorder then self:RestoreBorder() end
+            if self.RestoreBorder then self.RestoreBorder() end
             ApplyLvText(self:GetText())
         end)
         lvBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     end
-    local nowBt = NewButton(pop, L["当前"], 44, 24, 14)
-    nowBt:SetPoint("LEFT", lvBox or pop, "RIGHT", 6, 0)
+    local nowBt = NewButton(va, L["当前"], 44, 24, 14)
+    nowBt:SetPoint("LEFT", lvBox or va, "RIGHT", 6, 0)
     nowBt:SetScript("OnClick", function()
         local lv = PlayerLevel() or 60
         if lv < 1 then lv = 1 elseif lv > 60 then lv = 60 end
@@ -4625,7 +5194,7 @@ local function BuildBrowser(parent)
         ApplyLvText(tostring(lv))
         ns.PlaySound(1)
     end)
-    local maxBt = NewButton(pop, L["满级"], 44, 24, 14)
+    local maxBt = NewButton(va, L["满级"], 44, 24, 14)
     maxBt:SetPoint("LEFT", nowBt, "RIGHT", 8, 0)
     maxBt:SetScript("OnClick", function()
         if lvBox then lvBox:SetText("60") end
@@ -4633,11 +5202,11 @@ local function BuildBrowser(parent)
         ns.PlaySound(1)
     end)
 
-    local ug = CreateFrame("CheckButton", nil, pop)
+    local ug = CreateFrame("CheckButton", nil, va)
     ug:SetSize(36, 20)
     ug:EnableMouse(true)
     if ns.hui and ns.hui.ReskinToggle then ns.hui.ReskinToggle(ug) end
-    ug:SetPoint("TOPRIGHT", pop, "TOPRIGHT", -8, -76)
+    ug:SetPoint("TOPRIGHT", va, "TOPRIGHT", -8, -76)
     ug:SetScript("OnClick", function(self)
         BG.onlyUsable = not BG.onlyUsable
         self:SetChecked(BG.onlyUsable)
@@ -4646,13 +5215,13 @@ local function BuildBrowser(parent)
         FilterChanged()
     end)
     BG.usableTg = ug
-    local ul = MakeFS(pop, 14, C_TEXT, "RIGHT")
+    local ul = MakeFS(va, 14, C_TEXT, "RIGHT")
     ul:SetPoint("RIGHT", ug, "LEFT", -6, 0)
     ul:SetWordWrap(false)
     ul:SetText(L["只显示可用种类"])
 
-    local sy = MakeFS(pop, 14, C_GREY, "LEFT")
-    sy:SetPoint("TOPLEFT", pop, "TOPLEFT", 8, -106)
+    local sy = MakeFS(va, 14, C_GREY, "LEFT")
+    sy:SetPoint("TOPLEFT", va, "TOPLEFT", 8, -106)
     sy:SetText(L["来源"])
 
     local function SrcToggle(key)
@@ -4664,9 +5233,9 @@ local function BuildBrowser(parent)
     end
     BG.srcRows = {}
     for i, f in ipairs(FILTERS) do
-        local bt = CreateFrame("Button", nil, pop)
+        local bt = CreateFrame("Button", nil, va)
         bt:SetSize(154, 26)
-        bt:SetPoint("TOPLEFT", pop, "TOPLEFT", 8, -(122 + (i - 1) * 28))
+        bt:SetPoint("TOPLEFT", va, "TOPLEFT", 8, -(122 + (i - 1) * 28))
         local bx = CreateFrame("Frame", nil, bt)
         bx:SetSize(18, 18)
         bx:SetPoint("LEFT", bt, "LEFT", 4, 0)
@@ -4686,8 +5255,25 @@ local function BuildBrowser(parent)
         BG.srcRows[f.id] = bt
     end
 
-    local gb = NewButton(pop, L["生成 BiS 方案"], 154, 24, 14)
-    gb:SetPoint("TOPLEFT", pop, "TOPLEFT", 8, -296)
+    local ib = NewButton(va, "", 154, 24, 12)
+    ib:SetPoint("TOPLEFT", va, "TOPLEFT", 8, -294)
+    ib.lbl = ib:GetFontString()
+    if ib.lbl then ib.lbl:Hide() end
+    local ibL = MakeFS(ib, 14, C_TEXT, "LEFT")
+    ibL:SetPoint("LEFT", ib, "LEFT", 6, 0)
+    ibL:SetWordWrap(false)
+    ibL:SetText(L["副本筛选"])
+    local ibR = MakeFS(ib, 12, C_GREY, "RIGHT")
+    ibR:SetPoint("RIGHT", ib, "RIGHT", -6, 0)
+    ibR:SetWordWrap(false)
+    ib:SetScript("OnClick", function()
+        BG.InstView(true)
+        ns.PlaySound(1)
+    end)
+    BG.instBtn, BG.instBtnLbl = ib, ibR
+
+    local gb = NewButton(va, L["生成 BiS 方案"], 154, 24, 14)
+    gb:SetPoint("TOPLEFT", va, "TOPLEFT", 8, -322)
     gb.lbl = gb:GetFontString()
     SetButtonSelected(gb, false)
     gb:SetScript("OnClick", function()
@@ -4695,6 +5281,208 @@ local function BuildBrowser(parent)
         BG.ToggleFilterPop()
         ns.PlaySound(1)
     end)
+
+    local bb = CreateFrame("Button", nil, vb)
+    bb:SetSize(24, 24)
+    bb:SetPoint("TOPLEFT", vb, "TOPLEFT", 4, -8)
+    local bbl = MakeFS(bb, 16, C_TEXT, "CENTER")
+    bbl:SetAllPoints()
+    bbl:SetText("<")
+    bb:SetScript("OnClick", function()
+        BG.InstView(false)
+        ns.PlaySound(1)
+    end)
+
+    local bti = MakeFS(vb, 16, C_GOLD, "LEFT")
+    bti:SetPoint("LEFT", bb, "RIGHT", 2, 0)
+    bti:SetText(L["副本筛选"])
+
+    local bc = MakeFS(vb, 12, C_GREY, "RIGHT")
+    bc:SetPoint("TOPRIGHT", vb, "TOPRIGHT", -10, -14)
+    bc:SetWordWrap(false)
+    BG.instCnt = bc
+
+    local colW, rowH, rowsPer = 168, 24, 20
+    local items = {}
+    local defsAll = BG.InstDefs()
+    items[#items + 1] = { head = true, group = "dungeon", label = L["5 人本"] }
+    for i = 1, #defsAll.dungeon do items[#items + 1] = { e = defsAll.dungeon[i] } end
+    items[#items + 1] = { head = true, group = "raid", label = L["团本"] }
+    for i = 1, #defsAll.raid do items[#items + 1] = { e = defsAll.raid[i] } end
+    items[#items + 1] = { head = true, group = "world", label = L["世界首领"] }
+    for i = 1, #defsAll.world do items[#items + 1] = { e = defsAll.world[i] } end
+
+    local cols, cur, curN = {}, {}, 0
+    for i = 1, #items do
+        local it = items[i]
+        local needNew = (curN >= rowsPer) or (it.head and curN >= rowsPer - 1)
+        if needNew and curN > 0 then
+            cols[#cols + 1] = cur
+            cur, curN = {}, 0
+        end
+        cur[#cur + 1] = it
+        curN = curN + 1
+    end
+    if curN > 0 then cols[#cols + 1] = cur end
+
+    BG.instRows, BG.instRowBt = {}, {}
+    for ci = 1, #cols do
+        local cf = CreateFrame("Frame", nil, vb)
+        cf:SetSize(colW, rowsPer * rowH)
+        cf:SetPoint("TOPLEFT", vb, "TOPLEFT", 8 + (ci - 1) * (colW + 8), -40)
+        local list = cols[ci]
+        for ri = 1, #list do
+            local it = list[ri]
+            local top = -((ri - 1) * rowH)
+            if it.head then
+                local g = CreateFrame("Frame", nil, cf)
+                g:SetSize(colW, rowH)
+                g:SetPoint("TOPLEFT", cf, "TOPLEFT", 0, top)
+                local fs = MakeFS(g, 13, C_GREY, "LEFT")
+                fs:SetPoint("LEFT", g, "LEFT", 2, 0)
+                local n = #(defsAll[it.group] or {})
+                fs:SetText(format("%s  %d", it.label, n))
+                local ab = CreateFrame("Button", nil, g)
+                ab:SetSize(44, rowH)
+                ab:SetPoint("RIGHT", g, "RIGHT", 0, 0)
+                local afs = MakeFS(ab, 12, C_DIM, "RIGHT")
+                afs:SetAllPoints()
+                afs:SetText(L["全选"])
+                ab:SetScript("OnClick", function() BG.InstAll(it.group, true) end)
+            else
+                local e = it.e
+                local b = CreateFrame("Button", nil, cf)
+                b:SetSize(colW, rowH)
+                b:SetPoint("TOPLEFT", cf, "TOPLEFT", 0, top)
+                local bx = CreateFrame("Frame", nil, b)
+                bx:SetSize(18, 18)
+                bx:SetPoint("LEFT", b, "LEFT", 2, 0)
+                b.ring = bx:CreateTexture(nil, "ARTWORK")
+                b.ring:SetAllPoints()
+                b.ring:SetTexture("Interface\\AddOns\\DungeonsForever\\Media\\Common\\CheckRing")
+                b.disc = bx:CreateTexture(nil, "ARTWORK")
+                b.disc:SetAllPoints()
+                b.disc:SetTexture("Interface\\AddOns\\DungeonsForever\\Media\\Common\\CheckDisc")
+                b.tick = bx:CreateTexture(nil, "OVERLAY")
+                b.tick:SetAllPoints()
+                b.tick:SetTexture("Interface\\AddOns\\DungeonsForever\\Media\\Common\\CheckMark")
+                b.label = MakeFS(b, 13, C_TEXT, "LEFT")
+                b.label:SetPoint("LEFT", bx, "RIGHT", 8, 0)
+                b.label:SetWordWrap(false)
+                b.label:SetText(BG.InstLabel(e))
+                b.tag = MakeFS(b, 12, C_DIM, "RIGHT")
+                b.tag:SetPoint("RIGHT", b, "RIGHT", -2, 0)
+                b.tag:SetWordWrap(false)
+                b.key, b.def = e.key, e
+                b:SetScript("OnClick", function() BG.InstToggle(e.key) end)
+                BG.instRowBt[#BG.instRowBt + 1] = b
+            end
+        end
+    end
+
+    BG.INST_W = 16 + #cols * colW + math.max(0, #cols - 1) * 8
+    BG.INST_H = 40 + rowsPer * rowH + 36
+    BG.instCols = #cols
+
+    local footW = math.floor((BG.INST_W - 16 - 12) / 3)
+    local function FootBtn(text, x, w, onClick)
+        local b = NewButton(vb, text, w, 24, 12)
+        b:SetPoint("BOTTOMLEFT", vb, "BOTTOMLEFT", x, 8)
+        b:SetScript("OnClick", function()
+            onClick()
+            ns.PlaySound(1)
+        end)
+        return b
+    end
+    FootBtn(L["全选"], 8, footW, function() BG.InstAll("all", true) end)
+    FootBtn(L["清空"], 8 + footW + 6, footW, function() BG.InstAll("all", false) end)
+    FootBtn(L["恢复默认"], 8 + (footW + 6) * 2, footW, function() BG.InstReset() end)
+
+    function BG.PaintInstRows()
+        local set = BG.instSet or {}
+        local sel, tot = BG.InstCount()
+        if BG.instCnt then
+            BG.instCnt:SetText(format(L["已选 %d/%d"], sel, tot))
+        end
+        for i = 1, #BG.instRowBt do
+            local b = BG.instRowBt[i]
+            local on = set[b.key] == true
+            b.ring:SetShown(not on)
+            b.disc:SetShown(on)
+            b.tick:SetShown(on)
+            if on then
+                b.disc:SetVertexColor(0.91, 0.78, 0.42)
+                b.tick:SetVertexColor(1, 1, 1, 1)
+                b.label:SetTextColor(Unpack(C_TEXT))
+            else
+                b.ring:SetVertexColor(0.42, 0.41, 0.38, 0.9)
+                b.label:SetTextColor(0.55, 0.58, 0.65, 1)
+            end
+            local e = b.def
+            local n = e.n or 0
+            b.tag:SetText(tostring(n))
+            if n > 0 then
+                b.tag:SetTextColor(C_DIM[1], C_DIM[2], C_DIM[3])
+            else
+                b.tag:SetTextColor(0.45, 0.47, 0.5)
+            end
+        end
+    end
+
+    local function InstChanged()
+        BG.instGen = (BG.instGen or 0) + 1
+        SaveFilterPrefs()
+        BG.SyncFilterPop()
+        BG.PaintInstRows()
+        FilterChanged()
+    end
+
+    function BG.InstToggle(key)
+        BG.instSet[key] = not BG.instSet[key]
+        ns.PlaySound(1)
+        InstChanged()
+    end
+
+    function BG.InstAll(gkey, val)
+        local defs = BG.InstDefs()
+        local lists = {}
+        if gkey == "all" then
+            for _, list in pairs(defs) do lists[#lists + 1] = list end
+        elseif defs[gkey] then
+            lists[1] = defs[gkey]
+        end
+        for li = 1, #lists do
+            local list = lists[li]
+            for i = 1, #list do
+                BG.instSet[list[i].key] = val and true or false
+            end
+        end
+        ns.PlaySound(1)
+        InstChanged()
+    end
+
+    function BG.InstReset()
+        local defs = BG.InstDefs()
+        for _, list in pairs(defs) do
+            for i = 1, #list do
+                BG.instSet[list[i].key] = BG.InstOpen(list[i]) and true or false
+            end
+        end
+        ns.PlaySound(1)
+        InstChanged()
+    end
+
+    function BG.InstView(on)
+        if not BG.filterPop then return end
+        on = on and true or false
+        BG.instView = on
+        BG.filterPop:SetSize(on and BG.INST_W or BG.FILTER_W, on and BG.INST_H or BG.FILTER_H)
+        if BG.filterA then BG.filterA:SetShown(not on) end
+        if BG.filterB then BG.filterB:SetShown(on) end
+        if on then BG.PaintInstRows() end
+    end
+
+
 
     local spop = CreateFrame("Frame", "DungeonsForever_BisSettings", ns.MainFrame or UIParent, "BackdropTemplate")
     spop:SetFrameLevel(512)
@@ -4963,7 +5751,7 @@ local function BuildEnchCard(parent)
         local items = {}
         for _, d in ipairs(defs) do
             items[#items + 1] = {
-                text = (BG.enchFilter == d.key and "● " or "") .. tostring(d.label),
+                text = (BG.enchFilter == d.key and (ns.SYM.dot .. " ") or "") .. tostring(d.label),
                 func = function()
                     BG.enchFilter = d.key
                     BG.RequestRender()
@@ -5293,22 +6081,34 @@ function BG.ScoreVsBisAll(id, link)
     if type(id) ~= "number" then return nil end
     local slot = SlotOfAny(id)
     if type(slot) ~= "string" then return nil end
-    local baseId = EquippedInSlot(slot, id)
-    if type(baseId) ~= "number" or baseId == id then return nil end
+    local bases, blinks = {}, {}
+    if PAIR_SLOT[slot] then
+        local b1, l1 = InvIdOf(INV_SLOT_NAME[slot])
+        local b2, l2 = InvIdOf(INV_SLOT_NAME[PAIR_SLOT[slot]])
+        if b1 == id or b2 == id then return nil end
+        if b1 then bases[1] = b1 blinks[1] = l1 end
+        if b2 then bases[#bases + 1] = b2 blinks[#blinks + 1] = l2 end
+    else
+        local baseId = EquippedInSlot(slot, id)
+        if type(baseId) ~= "number" or baseId == id then return nil end
+        local eid, el = InvIdOf(INV_SLOT_NAME[slot])
+        bases[1] = baseId
+        blinks[1] = (eid == baseId) and el or nil
+    end
+    if #bases == 0 then return nil end
     local st
     if type(link) == "string" then st = BG.StatsFromLink(link) end
     if not st then st = ItemStatsOf(id) end
     if BG.StatlessArmor(st) then return nil end
-    local eid, el = InvIdOf(INV_SLOT_NAME[slot])
-    local baseLink = (eid == baseId) and el or nil
-    if not baseLink and PAIR_SLOT[slot] then
-        local _, pl = InvIdOf(INV_SLOT_NAME[PAIR_SLOT[slot]])
-        baseLink = pl
+    local bsts, bnames = {}, {}
+    for i = 1, #bases do
+        local bst = blinks[i] and BG.StatsFromLink(blinks[i]) or nil
+        if not bst then bst = ItemStatsOf(bases[i]) end
+        bsts[i] = bst
+        bnames[i] = "#" .. i
     end
-    local bst = baseLink and BG.StatsFromLink(baseLink) or nil
-    if not bst then bst = ItemStatsOf(baseId) end
-    if type(st) ~= "table" and type(bst) ~= "table" then return nil end
-    local armorRef = BG.ArmorRef(st, bst)
+    if type(st) ~= "table" and type(bsts[1]) ~= "table" and type(bsts[2]) ~= "table" then return nil end
+    local armorRef = BG.ArmorRef(st, bsts[1] or bsts[2])
     local sch = BG.wActive and BG.wSchemes and BG.wSchemes[BG.wActive] or nil
     local rows = {}
     local twoHand = slot == "two-hand"
@@ -5320,10 +6120,19 @@ function BG.ScoreVsBisAll(id, link)
             if sch and type(sch.w) == "table" then for k, v in pairs(sch.w) do w[k] = v end end
             local my = BG.ScoreOfStats(st, id, w, armorRef)
             if type(my) == "number" and my > 0 then
-                local bs = BG.ScoreOfStats(bst, baseId, w, armorRef)
-                if type(bs) ~= "number" then bs = 0 end
-                rows[#rows + 1] = { key = sr.key, label = L[sr.label] or sr.label,
-                                    role = sr.role, pct = ScorePct(my - bs, bs), delta = my - bs }
+                local pcts, deltas = {}, {}
+                for i = 1, #bases do
+                    local bs = BG.ScoreOfStats(bsts[i], bases[i], w, armorRef)
+                    if type(bs) ~= "number" then bs = 0 end
+                    deltas[i] = my - bs
+                    pcts[i] = ScorePct(my - bs, bs)
+                end
+                local bi = 1
+                if type(pcts[2]) == "number" and type(pcts[1]) == "number" and pcts[2] > pcts[1] then bi = 2 end
+                rows[#rows + 1] = { key = sr.key, label = L[sr.label] or sr.label, role = sr.role,
+                                    pct = pcts[bi], delta = deltas[bi],
+                                    p1 = pcts[1], d1 = deltas[1], b1 = bnames[1],
+                                    p2 = pcts[2], d2 = deltas[2], b2 = bnames[2] }
             end
         end
     end
@@ -5422,7 +6231,7 @@ end
 
 function BG.SpecLabel(key)
     for _, sr in ipairs(SPEC_DIR[BG.cls] or {}) do
-        if sr.key == key then return L[sr.label] or sr.label end
+        if sr.key == key then return BG.SpecTabName(sr) end
     end
     return nil
 end
@@ -5432,5 +6241,5 @@ function BG.ArrowScopeText()
     if s == "all" then return L["任一专精"] end
     if s == "manual" then return L["跟随 BiS 选择"] end
     local lbl = BG.SpecLabel(BG.DetectSpec())
-    return L["当前天赋"] .. "：" .. (lbl or L["未识别"])
+    return L["当前天赋"] .. L["："] .. (lbl or L["未识别"])
 end

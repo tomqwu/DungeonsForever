@@ -437,6 +437,73 @@ local function bpPaint(host, disp, cr, cg, cb, size)
     end
 end
 
+local DEAD_DISC_TEX = "Interface\\AddOns\\DungeonsForever\\Media\\Common\\CheckDisc"
+local DEAD_X_TEX = "Interface\\AddOns\\DungeonsForever\\Media\\Common\\CrossMark"
+local DEAD_DISC_RGB = { 0.60, 0.10, 0.09, 0.96 }
+local DEAD_X_RGB = { 1, 0.97, 0.95 }
+
+M.DEAD_ALPHA = 0.45
+
+local DEAD_SIZE = { r = 0.54, min = 11, max = 30, x = 0.58, off = 0.30 }
+local DEAD_SIZE_MINI = { r = 0.68, min = 17, max = 46, x = 0.66, off = 0.26 }
+
+local function bpDead(host, dead, size, mini)
+    if not host then return end
+    local rim, disc, mark = host.avDeadRim, host.avDead, host.avDeadX
+    if not dead then
+        if rim then rim:Hide() end
+        if disc then disc:Hide() end
+        if mark then mark:Hide() end
+        return
+    end
+    local cfg = mini and DEAD_SIZE_MINI or DEAD_SIZE
+    local s = (size or M.PIN_MIN) * cfg.r
+    if s < cfg.min then s = cfg.min elseif s > cfg.max then s = cfg.max end
+    if not disc then
+        rim = host:CreateTexture(nil, "OVERLAY", nil, 4)
+        rim:SetTexture(DEAD_DISC_TEX)
+        rim:SetVertexColor(0, 0, 0, 0.55)
+        disc = host:CreateTexture(nil, "OVERLAY", nil, 5)
+        disc:SetTexture(DEAD_DISC_TEX)
+        disc:SetVertexColor(DEAD_DISC_RGB[1], DEAD_DISC_RGB[2], DEAD_DISC_RGB[3], DEAD_DISC_RGB[4])
+        mark = host:CreateTexture(nil, "OVERLAY", nil, 6)
+        mark:SetTexture(DEAD_X_TEX)
+        mark:SetVertexColor(DEAD_X_RGB[1], DEAD_X_RGB[2], DEAD_X_RGB[3])
+        host.avDeadRim, host.avDead, host.avDeadX = rim, disc, mark
+    end
+    local off = s * cfg.off
+    disc:SetSize(s, s)
+    disc:ClearAllPoints()
+    disc:SetPoint("TOPRIGHT", host, "TOPRIGHT", off, off)
+    disc:Show()
+    rim:SetSize(s + 2.5, s + 2.5)
+    rim:ClearAllPoints()
+    rim:SetPoint("CENTER", disc, "CENTER", 0, 0)
+    rim:Show()
+    local xs = s * cfg.x
+    mark:SetSize(xs, xs)
+    mark:ClearAllPoints()
+    mark:SetPoint("CENTER", disc, "CENTER", 0, 0)
+    mark:Show()
+end
+
+M.PaintBossDead = bpDead
+
+local function bpDim(host, a)
+    if not host then return end
+    if host.avRing then host.avRing:SetAlpha(a) end
+    if host.avBase then host.avBase:SetAlpha(a) end
+    if host.avFace then host.avFace:SetAlpha(a) end
+end
+
+M.PaintBossDim = bpDim
+
+local function bossKilled(id, en)
+    local fn = M.BossKilled
+    if not fn then return false end
+    return (fn(id, en)) and true or false
+end
+
 M.MAX_LIST = 30
 M.SHOW_NPC_ID = true
 
@@ -805,7 +872,7 @@ local function FloorName(id, idx)
     local arr = FLOOR_NAMES[FLOOR_KEY[id] or id]
     local t = arr and arr[idx]
     if not t then return nil end
-    local gl = (type(GetLocale) == "function") and GetLocale() or "zhCN"
+    local gl = (type(DF_Locale) == "function") and DF_Locale() or "zhCN"
     if gl == "enUS" then return t[1] end
     if gl == "zhTW" then return t[3] end
     return t[2]
@@ -945,6 +1012,75 @@ local function LayPath(id, lay)
     return WM .. ART[id][1] .. "\\" .. lay
 end
 
+-- 英文客户端可能没有某些原生地图贴图路径（如 ScarletMonasteryOld）：贴图为空时，
+-- 先试去掉 "Old" 的路径，再按英文楼层名找到游戏地图，用 C_Map 的地图贴图（文件 ID，与语言无关）。
+-- English clients may lack some native map art paths (e.g. ScarletMonasteryOld). When a tile comes back empty,
+-- try the path without "Old", then find the game map by its English floor name and use C_Map art (file IDs, locale-independent).
+local ART_BY_NAME, ART_FB = nil, {}
+local function ArtNameIndex()
+    if ART_BY_NAME then return ART_BY_NAME end
+    ART_BY_NAME = {}
+    if not (C_Map and C_Map.GetMapInfo) then return ART_BY_NAME end
+    local function add(name, mid)
+        if type(name) ~= "string" or name == "" then return end
+        local l = ART_BY_NAME[name]
+        if not l then l = {} ART_BY_NAME[name] = l end
+        l[#l + 1] = mid
+    end
+    for mid = 1, 2600 do
+        local ok, info = pcall(C_Map.GetMapInfo, mid)
+        if ok and info and (info.mapType == 4 or info.mapType == 5) then
+            add(info.name, mid)
+            if C_Map.GetMapGroupID and C_Map.GetMapGroupMembersInfo then
+                local okg, gid = pcall(C_Map.GetMapGroupID, mid)
+                if okg and gid then
+                    local okm, mem = pcall(C_Map.GetMapGroupMembersInfo, gid)
+                    if okm and type(mem) == "table" then
+                        for _, m in ipairs(mem) do
+                            if m.mapID == mid then add(m.name, mid) end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return ART_BY_NAME
+end
+
+function M.ArtFallback(id, idx)
+    local key = tostring(id) .. ":" .. tostring(idx)
+    local hit = ART_FB[key]
+    if hit ~= nil then return hit or nil end
+    ART_FB[key] = false
+    if not (C_Map and C_Map.GetMapArtLayerTextures) then return nil end
+    local fn = (M.FloorNumAt and M.FloorNumAt(id, idx)) or idx
+    local row = FLOOR_NAMES[FLOOR_KEY[id] or id]
+    local en = row and row[fn] and row[fn][1]
+    local cands = en and ArtNameIndex()[en]
+    if not cands then return nil end
+    for _, mid in ipairs(cands) do
+        local ok, tex = pcall(C_Map.GetMapArtLayerTextures, mid, 1)
+        if ok and type(tex) == "table" and #tex > 0 then
+            ART_FB[key] = tex
+            return tex
+        end
+    end
+    return nil
+end
+
+function M.SetTile(t, id, idx, path, n, fixed)
+    if fixed then t:SetTexture(fixed) return end
+    t:SetTexture(path .. n)
+    if t:GetTexture() then return end
+    local alt = path:gsub("Old\\", "\\")
+    if alt ~= path then
+        t:SetTexture(alt .. n)
+        if t:GetTexture() then return end
+    end
+    local fb = M.ArtFallback(id, idx)
+    if fb and fb[n] then t:SetTexture(fb[n]) end
+end
+
 function M.PathFor(id)
     local layers = M.LayersFor(id)
     if not (layers and layers[1]) then return nil end
@@ -987,7 +1123,7 @@ function M.BossesFor(id)
             out = out or {}
             local meta = s[3]
             out[#out + 1] = { en = s[1], zh = s[2] or s[1], npc = s[4] or "", items = s[5] or {},
-                rare = type(meta) == "string" and meta:find(IN_ZH_RARE, 1, true) ~= nil or false }
+                rare = type(meta) == "string" and (meta:find(IN_ZH_RARE, 1, true) ~= nil or meta:find("Rare", 1, true) ~= nil) or false }
         end
     end
     return out
@@ -1030,7 +1166,7 @@ function M.RareBoss(id, en)
             for i = 1, #loot do
                 local s = loot[i]
                 if type(s) == "table" and s[1] and type(s[3]) == "string"
-                   and s[3]:find(IN_ZH_RARE, 1, true) then
+                   and (s[3]:find(IN_ZH_RARE, 1, true) or s[3]:find("Rare", 1, true)) then
                     set[s[1]] = true
                 end
             end
@@ -1096,6 +1232,33 @@ function M.QuestPinsOn()
     return s.mapQuestPins ~= false
 end
 
+function M.PinsHidden()
+    local s = DungeonsForeverDB and DungeonsForeverDB.dungeon
+    if type(s) ~= "table" then return false end
+    return s.mapPinsHidden == true
+end
+
+function M.SetPinsHidden(v)
+    local db = DungeonsForeverDB
+    if type(db) ~= "table" then return end
+    db.dungeon = db.dungeon or {}
+    db.dungeon.mapPinsHidden = v and true or false
+    if M.SyncPins then pcall(M.SyncPins, M) end
+    if M.SyncWorldQuestPins then pcall(M.SyncWorldQuestPins) end
+    if ns.MapWorldModule and ns.MapWorldModule.ResetPins then
+        pcall(ns.MapWorldModule.ResetPins)
+    end
+    if ns.ExploreMapRefresh then pcall(ns.ExploreMapRefresh) end
+end
+
+function M.QuestTakeableOnly()
+    local s = DungeonsForeverDB and DungeonsForeverDB.dungeon
+    local c = s and s.mapQuestPinsCfg
+    if type(c) ~= "table" then return true end
+    if type(c.scope) ~= "table" then return true end
+    return c.scope.take ~= false
+end
+
 function M.SideOK(sd)
     if not sd then return true end
     if sd ~= "A" and sd ~= "H" then return true end
@@ -1120,12 +1283,19 @@ function M.QuestClassOK(qid)
     local cls = (type(row) == "table") and row[15] or nil
     if type(cls) ~= "string" or cls == "" then return true end
     if not UnitClass then return true end
-    local pc = UnitClass("player")
-    if not pc then return true end
+    local cn, tok = UnitClass("player")
+    if not cn then return true end
     local list = DG.QClassList and DG.QClassList(cls) or nil
-    if not list then return cls == pc end
+    if not list then
+        if cn == cls then return true end
+        local t = DG.QCLASS_TOKEN and DG.QCLASS_TOKEN[cls]
+        return (t and tok and t == tok) and true or false
+    end
     for i = 1, #list do
-        if list[i] == pc then return true end
+        local s = list[i]
+        if s == cn then return true end
+        local t = DG.QCLASS_TOKEN and DG.QCLASS_TOKEN[s]
+        if t and tok and t == tok then return true end
     end
     return false
 end
@@ -1646,6 +1816,7 @@ local function BuildBlocks(host)
     if not frame or frame.__blocksReady then return end
     frame.__blocksReady = true
     local detChild, innerW = frame.detChild, frame.innerW
+    local detScroll = frame.detScroll
     local blocks = {}
     for i = 1, 3 do
         local b = CreateFrame("Frame", nil, detChild)
@@ -2629,7 +2800,8 @@ M.ROUTE_ON = { blackfathom_deeps = true, ragefire_chasm = true, wailing_caverns 
                maraudon = true, zul_farrak = true, sunken_temple = true, scholomance = true,
                stratholme_main = true, stratholme_service = true,
                dire_maul_east = true, dire_maul_north = true, dire_maul_west = true,
-               the_drowned_city = true, kroldok_stronghold = true }
+               the_drowned_city = true, kroldok_stronghold = true,
+               alcaz_prison = true, blackmaw_hold = true, shapers_terrace = true }
 
 function M.RouteOn(id)
     return id ~= nil and M.ROUTE_ON[id] == true
@@ -3210,7 +3382,7 @@ local function noBadge(p)
     e.inner:SetTexture(M.ROUTE_DOT_TEX)
     e.inner:SetVertexColor(0.06, 0.05, 0.04, 0.92)
     e.txt = p.host:CreateFontString(nil, "OVERLAY")
-    e.txt:SetFont("Fonts\\ARHei.ttf", 12, "OUTLINE")
+    e.txt:SetFont(ns.SafeFont("Fonts\\ARHei.ttf"), 12, "OUTLINE")
     e.txt:SetTextColor(1, 1, 1)
     p.list[i] = e
     return e
@@ -3236,7 +3408,7 @@ function M.SyncNoBadges(host, tag, cw, ch, items, uk)
             e.inner:ClearAllPoints()
             e.inner:SetPoint("CENTER", host, "TOPLEFT", x, y)
             e.inner:SetSize(di, di)
-            e.txt:SetFont("Fonts\\ARHei.ttf", math.floor(d * (it[7] and 0.44 or 0.58)), "OUTLINE")
+            e.txt:SetFont(ns.SafeFont("Fonts\\ARHei.ttf"), math.floor(d * (it[7] and 0.44 or 0.58)), "OUTLINE")
             e.txt:SetText(it[4])
             e.txt:ClearAllPoints()
             e.txt:SetPoint("CENTER", host, "TOPLEFT", x, y)
@@ -3351,7 +3523,7 @@ function M.ShowRouteMenu(owner)
         local k = M.RouteSegKey(id, floor, i)
         local hid = (M.routeOff or M.routeHidden[k]) and true or false
         items[#items + 1] = {
-            text = FloorWord(segs[i].from) .. " → " .. FloorWord(segs[i].to),
+            text = FloorWord(segs[i].from) .. (" " .. ns.SYM.arrow .. " ") .. FloorWord(segs[i].to),
             checked = not hid,
             color = hid and "|cff7a6a52" or nil,
             func = function()
@@ -3516,8 +3688,10 @@ function M.SyncPins()
             local kind = p.kind or "boss"
             local ps = M.PinScale()
             local dim = (kind == "boss") and M.RareBoss(M.curId, p.en) or false
-            bt:SetAlpha(dim and 0.5 or 1)
-            bt.nm:SetAlpha(dim and 0.5 or 1)
+            local dead = (kind == "boss") and bossKilled(M.curId, p.en) or false
+            local pa = dim and 0.5 or 1
+            bt:SetAlpha(pa)
+            bt.nm:SetAlpha(pa)
             local skip = nil
             bt.__kind, bt.__p = kind, p
             bt.__en, bt.__zh = p.en, p.zh
@@ -3624,8 +3798,10 @@ function M.SyncPins()
                 bt.dot:Hide()
                 bt.__av:Show()
                 local isSel = (M.detailEn == p.en) or false
-                bpPaint(bt.__av, bpDisp(M.curId, p.en), cr, cg, cb,
-                    (isSel and M.PIN_SIZE or M.PIN_MIN) * ps)
+                local asz = (isSel and M.PIN_SIZE or M.PIN_MIN) * ps
+                bpPaint(bt.__av, bpDisp(M.curId, p.en), cr, cg, cb, asz)
+                bpDim(bt.__av, (dead and not dim) and M.DEAD_ALPHA or 1)
+                bpDead(bt.__av, dead, asz)
             end
             local sel = (kind == "boss") and (M.detailEn == p.en) or false
             if kind == "boss" and not sel then nm = "" end
@@ -3698,7 +3874,7 @@ end
 function M.PinOnClick(self, inWorld)
     local kind, p = self.__kind, self.__p
     if kind == "boss" and p and p.en then
-        M.Select(p.en)
+        M.Select(p.en, self.__dfView)
     elseif kind == "quest" and p and p.id then
         M.GotoQuest(p.id, inWorld)
     elseif kind == "prev" or kind == "next" then
@@ -3959,7 +4135,7 @@ function M.PinOnEnter(self)
             end
         end
     elseif self.__kind == "rare" then
-        GameTooltip:AddLine(L["稀有"] .. "：" .. (p.name or ""), 0.72, 0.76, 0.85, true)
+        GameTooltip:AddLine(L["稀有"] .. L["："] .. (p.name or ""), 0.72, 0.76, 0.85, true)
     elseif self.__kind == "note" then
         GameTooltip:AddLine(L["注释"], 1, 0.82, 0, true)
         if p.text and p.text ~= "" then
@@ -4010,6 +4186,8 @@ end
 function M.SyncPinBtns()
     local frame = M.frame
     if not frame then return end
+    local hdr = frame.hdrCard
+    local prev = hdr
     local bb = frame.bossPinBtn
     if bb then
         local any = M.HasKindPins(M.curId, "boss") or M.HasKindPins(M.curId, "quest")
@@ -4021,7 +4199,14 @@ function M.SyncPinBtns()
         bb:SetText(L["图钉显示"])
         Host.SetButtonSelected(bb, dim)
         M.FitPinBtn(bb)
+        bb:ClearAllPoints()
+        if prev == hdr then
+            bb:SetPoint("LEFT", hdr, "LEFT", M.SIDE_PAD, 0)
+        else
+            bb:SetPoint("LEFT", prev, "RIGHT", M.PIN_BTN_GAP, 0)
+        end
         bb:SetShown(any)
+        if any then prev = bb end
     end
     local rb = frame.routePinBtn
     if rb then
@@ -4029,6 +4214,12 @@ function M.SyncPinBtns()
         rb:SetText(L["路线显示"])
         Host.SetButtonSelected(rb, vis < tot)
         M.FitPinBtn(rb)
+        rb:ClearAllPoints()
+        if prev == hdr then
+            rb:SetPoint("LEFT", hdr, "LEFT", M.SIDE_PAD, 0)
+        else
+            rb:SetPoint("LEFT", prev, "RIGHT", M.PIN_BTN_GAP, 0)
+        end
         rb:SetShown(M.HasRoute(M.curId))
     end
 end
@@ -4283,7 +4474,7 @@ function M.SyncSide(forceFrame)
                     n = n + 1
                     local r = frame.questRows[n]
                     local nm = DG.QuestName(qid)
-                    r.name:SetText(format("《%s》", nm or tostring(qid)))
+                    r.name:SetText(format(L["《%s》"], nm or tostring(qid)))
                     local mk = QMARK_STATE[st]
                     if mk then
                         r.ic:SetTexture("Interface\\AddOns\\DungeonsForever\\Media\\Common\\CheckDisc")
@@ -4541,7 +4732,11 @@ function M.SyncSide(forceFrame)
             y = y + M.BLK_GAP
 
             frame.detChild:SetHeight(math.max(30, -y + 10))
-            frame.detScroll:SetVerticalScroll(0)
+            local detKey = tostring(id) .. "|" .. tostring(detailEn)
+            if frame.__detKey ~= detKey then
+                frame.__detKey = detKey
+                frame.detScroll:SetVerticalScroll(0)
+            end
             if frame.listBar then frame.listBar:Hide() end
             M.SyncScrollBar(frame.detScroll)
             return
@@ -4592,6 +4787,7 @@ function M.SyncSide(forceFrame)
         end
         local cr, cg, cb = M.BossColor(id, bosses[i].en)
         bpPaint(r.__av, bpDisp(id, bosses[i].en), cr, cg, cb, 32)
+        bpDead(r.__av, bossKilled(id, bosses[i].en), 32)
         if r.__card then PiecesSetShown(r.__card, nativeRow) end
         if nativeRow then
             for _, t in ipairs(r.__borderPieces or {}) do t:SetVertexColor(0.42, 0.32, 0.20) end
@@ -4634,6 +4830,13 @@ end
 
 function M.Select(en, host)
     local mapWin = host and host.__mapWin and ns.MapWindowModule or nil
+    if not mapWin then
+        local sh = M.SideHost
+        if sh and sh.__mapWin and sh.IsShown and sh:IsShown() then
+            mapWin = ns.MapWindowModule
+            host = sh
+        end
+    end
     local id = mapWin and mapWin.curId or M.curId
     if not (id and en) then return end
     local bosses = M.BossesFor(id)
@@ -4646,18 +4849,21 @@ function M.Select(en, host)
     if cur == en then en = nil end
     if mapWin then
         host.__detailEn = en
-    else
         M.detailEn = en
+        if en then
+            host.sideQuests = nil
+            local idx = M.BossLayer(id, en)
+            if idx then mapWin.curLayer = idx end
+        end
+        mapWin.Sync()
+        return
     end
+    M.detailEn = en
     if en then
+        if M.frame then M.frame.sideQuests = nil end
         local idx = M.BossLayer(id, en)
         if idx then
-            if mapWin then
-                if mapWin.curLayer ~= idx then
-                    mapWin.curLayer = idx
-                    mapWin.Sync()
-                end
-            elseif idx ~= M.curLayer then
+            if idx ~= M.curLayer then
                 if M.frame and M.frame:IsShown() then
                     M.SetLayer(idx)
                 else
@@ -4671,11 +4877,16 @@ function M.Select(en, host)
 end
 
 function M.ShowList(host)
+    M.detailEn = nil
     if host and host.__mapWin then
         host.__detailEn = nil
-    else
-        M.detailEn = nil
+        host.__detKey = nil
+        local MWm = ns.MapWindowModule
+        if MWm and MWm.Sync then MWm.Sync() end
+        return
     end
+    if M.frame then M.frame.__detKey = nil end
+    if M.SideHost then M.SideHost.__detKey = nil end
     M.SyncPins()
     M.SyncSide()
 end
@@ -4814,7 +5025,7 @@ function M.Paint(d)
     else
         for _, p in ipairs(lay) do
             local t = frame.tiles[p.n]
-            t:SetTexture((fixTile and fixTile[p.n]) or (path .. p.n))
+            M.SetTile(t, id, idx, path, p.n, fixTile and fixTile[p.n])
             t:SetTexCoord(p.u0, p.u1, p.v0, p.v1)
             t:ClearAllPoints()
             t:SetPoint("TOPLEFT", frame.canvas, "TOPLEFT", p.x, -p.y)
@@ -4997,7 +5208,8 @@ local function wpPinAcquire(canvas)
     return p
 end
 
-local WP_DEF = { size = 18, world = false, scope = { lv = true, reco = true, enter = true, all = false, grey = true } }
+local WP_DEF = { size = 18, world = false, layer = "below", scope = { lv = true, reco = true, enter = true, all = false, grey = true, take = true } }
+local WP_LAYER_BELOW = 2019
 
 local function wpCfg()
     local db = ns.DB and ns.DB()
@@ -5014,6 +5226,7 @@ local function wpCfg()
     end
     if c.size == nil then c.size = WP_DEF.size end
     if c.world == nil then c.world = WP_DEF.world end
+    if c.layer ~= "above" and c.layer ~= "below" then c.layer = WP_DEF.layer end
     if type(c.scope) ~= "table" then c.scope = {} end
     for k, v in pairs(WP_DEF.scope) do
         if c.scope[k] == nil then c.scope[k] = v end
@@ -5041,7 +5254,7 @@ end
 function M.SyncWorldQuestPins()
     if not (WorldMapFrame and WorldMapFrame.IsShown and WorldMapFrame:IsShown()
             and WorldMapFrame.GetMapID) then return end
-    if not M.QuestPinsOn() then
+    if not M.QuestPinsOn() or M.PinsHidden() then
         wpRelease()
         return
     end
@@ -5078,7 +5291,12 @@ function M.SyncWorldQuestPins()
         end
     end
     local lvl
-    if base and base > 0 then lvl = base + 1 end
+    if base and base > 0 then
+        lvl = base + 1
+        if wpCfg().layer ~= "above" then
+            lvl = math.min(WP_LAYER_BELOW, lvl)
+        end
+    end
     local data = wpStatic()
     local cfg = wpCfg()
     local sc2 = cfg.scope
@@ -5096,7 +5314,25 @@ function M.SyncWorldQuestPins()
         useLv, useReco, useEnter = sc2.lv == true, sc2.reco == true, sc2.enter == true
     end
     local dlv = wpDlv()
-    local pcls = (UnitClass and UnitClass("player")) or nil
+    local pcn, ptok
+    if UnitClass then pcn, ptok = UnitClass("player") end
+    local function wpClassOK(raw)
+        if not raw or raw == "" then return true end
+        if not pcn then return true end
+        local list = DG.QClassList and DG.QClassList(raw)
+        if not list then
+            if pcn == raw then return true end
+            local t = DG.QCLASS_TOKEN and DG.QCLASS_TOKEN[raw]
+            return (t and ptok and t == ptok) and true or false
+        end
+        for i = 1, #list do
+            local s = list[i]
+            if s == pcn then return true end
+            local t = DG.QCLASS_TOKEN and DG.QCLASS_TOKEN[s]
+            if t and ptok and t == ptok then return true end
+        end
+        return false
+    end
     local function wpGrey(qlv)
         if GetQuestDifficultyColor then
             local ok, c = pcall(GetQuestDifficultyColor, qlv)
@@ -5117,8 +5353,9 @@ function M.SyncWorldQuestPins()
         return qlv <= g
     end
     local function qHit(q)
+        if DG.QuestRepeat and DG.QuestRepeat(q[1]) then return false end
         if side and q[2] and q[2] ~= side then return false end
-        if pcls and q[15] and q[15] ~= pcls then return false end
+        if not wpClassOK(q[15]) then return false end
         if DG.QuestRaceOK and not DG.QuestRaceOK(q[1]) then return false end
         local r = data.qdk[q[1]] and dlv[data.qdk[q[1]]]
         local qlv = q[3]
@@ -5153,7 +5390,7 @@ function M.SyncWorldQuestPins()
         local qlv
         if sq then
             if side and sq[2] and sq[2] ~= side then return false end
-            if pcls and sq[15] and sq[15] ~= pcls then return false end
+            if not wpClassOK(sq[15]) then return false end
             if DG.QuestRaceOK and not DG.QuestRaceOK(seg) then return false end
             local sp = sq[9]
             if type(sp) == "table" then
@@ -5332,30 +5569,8 @@ local function wpSetFs(parent, size, col)
 end
 
 local function wpMkBtn(parent, text, w)
-    local b = CreateFrame("Button", nil, parent)
-    b:SetSize(w or 46, 24)
-    b:EnableMouse(true)
-    if ns.hui and ns.hui.BuildRoundedBG and ns.hui.BuildRoundBorder then
-        b.fills = ns.hui.BuildRoundedBG(b, 8, { 1, 1, 1, 0.06 }, "both", false, nil, true)
-        b.edges = ns.hui.BuildRoundBorder(b, 8, { 0.40, 0.43, 0.50 })
-    else
-        b.bg = b:CreateTexture(nil, "BACKGROUND")
-        b.bg:SetAllPoints()
-        b.bg:SetColorTexture(1, 1, 1, 0.06)
-    end
-    local fs = wpSetFs(b, 14, WP_TXT)
-    fs:SetJustifyH("CENTER")
-    fs:SetAllPoints()
-    fs:SetText(text)
-    b:SetFontString(fs)
-    b:SetScript("OnEnter", function(self)
-        for _, t in ipairs(self.fills or {}) do t:SetAlpha(0.14) end
-        if self.bg then self.bg:SetAlpha(0.14) end
-    end)
-    b:SetScript("OnLeave", function(self)
-        for _, t in ipairs(self.fills or {}) do t:SetAlpha(0.06) end
-        if self.bg then self.bg:SetAlpha(0.06) end
-    end)
+    local b = Host.NewButton(parent, text, w or 46, 24, 14)
+    if b.SetPushedTextOffset then pcall(b.SetPushedTextOffset, b, 0, 0) end
     return b
 end
 
@@ -5395,7 +5610,7 @@ local function wpStepperRow(content, y, label, minv, maxv, step, get, set, fmt)
     local plus = wpMkBtn(content, "+", 24)
     plus:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, y)
     local minus = wpMkBtn(content, "-", 24)
-    minus:SetPoint("TOPRIGHT", plus, "TOPLEFT", -4, 0)
+    minus:SetPoint("TOPRIGHT", plus, "TOPLEFT", -8, 0)
     local val = wpSetFs(content, 14, WP_TXT)
     val:SetJustifyH("RIGHT")
     val:SetPoint("RIGHT", minus, "LEFT", -6, 0)
@@ -5417,6 +5632,44 @@ local function wpStepperRow(content, y, label, minv, maxv, step, get, set, fmt)
     }
 end
 
+local function wpOptRow(content, y, label, opts, get, set)
+    local lab = wpSetFs(content, 14, WP_TXT)
+    lab:SetJustifyH("LEFT")
+    lab:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y - 5)
+    lab:SetText(label)
+    local cw = content.GetWidth and content:GetWidth() or 0
+    if type(cw) ~= "number" or cw <= 1 then cw = 196 end
+    local btns = {}
+    local paint
+    for i = 1, #opts do
+        local o = opts[i]
+        local b = wpMkBtn(content, o[2], cw)
+        b.__key = o[1]
+        if i == 1 then
+            b:SetPoint("TOPLEFT", content, "TOPLEFT", 0, y - 26)
+        else
+            b:SetPoint("TOPLEFT", btns[i - 1], "BOTTOMLEFT", 0, -8)
+        end
+        b:SetScript("OnClick", function(self)
+            set(self.__key)
+            paint()
+            ns.PlaySound(1)
+            M.SyncWorldQuestPins()
+        end)
+        btns[i] = b
+    end
+    paint = function()
+        local cur = get()
+        for i = 1, #btns do
+            Host.SetButtonSelected(btns[i], btns[i].__key == cur)
+        end
+    end
+    paint()
+    return {
+        sync = function() paint() end,
+    }
+end
+
 local function wpCreatePanel()
     local host = ns.MainFrame or UIParent
     local f = CreateFrame("Frame", "DFQuestPinSettings", host, "BackdropTemplate")
@@ -5430,7 +5683,7 @@ local function wpCreatePanel()
         f:SetPoint("BOTTOMLEFT", host, "BOTTOMRIGHT", 4, 0)
     else
         f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-        f:SetHeight(390)
+        f:SetHeight(430)
     end
     f:Hide()
     f:SetScript("OnHide", function()
@@ -5441,7 +5694,7 @@ local function wpCreatePanel()
     local title = wpSetFs(f, 16, WP_WHT)
     title:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -8)
     title:SetJustifyH("LEFT")
-    title:SetText(L["图钉设置"])
+    title:SetText(L["任务设置"])
     local syncers = {}
     local resetB = wpMkBtn(f, L["重置"], 56)
     resetB:SetPoint("TOPRIGHT", f, "TOPRIGHT", -12, -6)
@@ -5463,6 +5716,19 @@ local function wpCreatePanel()
             function(v) wpCfg().size = v end,
             function(v) return tostring(v) end)
         syncers[#syncers + 1] = function() row:sync() end
+        y = y - 30
+    end
+    do
+        local tg = wpToggleRow(content, y, L["不显示无法接取的任务"],
+            function() return wpCfg().scope.take == true end,
+            function(v)
+                wpCfg().scope.take = v
+                local du = ns.DungeonUI
+                if du and type(du.RenderDungeonQuests) == "function" then
+                    pcall(du.RenderDungeonQuests, du)
+                end
+            end)
+        syncers[#syncers + 1] = function() tg:sync() end
         y = y - 30
     end
     y = y - 8
@@ -5493,6 +5759,16 @@ local function wpCreatePanel()
             function(v) wpCfg().world = v end)
         syncers[#syncers + 1] = function() tg:sync() end
         y = y - 24
+    end
+    y = y - 8
+    do
+        local row = wpOptRow(content, y, L["地图图钉层级"], {
+            { "above", L["Questie 之上"] },
+            { "below", L["Questie 之下"] },
+        },
+            function() return wpCfg().layer end,
+            function(v) wpCfg().layer = v end)
+        syncers[#syncers + 1] = function() row:sync() end
     end
     f.syncAll = function()
         for _, fn in ipairs(syncers) do fn() end

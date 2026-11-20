@@ -14,6 +14,7 @@ local MAX_PT = 51
 local COLW, GX, TOP = 303, 41, 50
 local GRID_Y, ROW_STEP, NODE_SIZE = 200, 60, 40
 local BODY_W, BODY_H = 1212, 595
+local BODY_EXT = 44
 local LIST_W, LIST_ROW, LIST_STEP = 220, 22, 25
 local LIST_DROP = 20
 local BRAND_LIFT = 5
@@ -47,16 +48,87 @@ local TAB_LOGO = '|TInterface\\AddOns\\DungeonsForever\\Media\\Brand\\DungeonsFo
 
 local CT, Traits = _G.C_ClassTalents, _G.C_Traits
 
+local function InCombat()
+    return type(InCombatLockdown) == 'function' and InCombatLockdown() and true or false
+end
+NP.InCombat = InCombat
+
+local BASE_S = 'HIGH'
+local BASE_L = 2
+
+local function LayerScan()
+    local pf = _G.PlayerSpellsFrame
+    local T = pf and pf.TalentsFrame
+    if not (pf and T) then return nil end
+    local lo, hi, medAll, seen = nil, nil, nil, 0
+    local function scan(f, depth)
+        if depth > 12 or seen > 30000 then return end
+        local kids = { f:GetChildren() }
+        for i = 1, #kids do
+            seen = seen + 1
+            if seen > 30000 then return end
+            local c = kids[i]
+            if not c.__dfMine then
+                local s, l = c:GetFrameStrata(), c:GetFrameLevel() or 0
+                if s == 'MEDIUM' or s == 'HIGH' then
+                    local tag = (s == 'HIGH') and (10000 + l) or l
+                    if not lo or tag < lo then lo = tag end
+                    if not hi or tag > hi then hi = tag end
+                    if s == 'MEDIUM' and (not medAll or l > medAll) then medAll = l end
+                end
+                scan(c, depth + 1)
+            end
+        end
+    end
+    scan(pf, 0)
+    NP.nativeLo, NP.nativeHi, NP.nativeMedAll = lo, hi, medAll
+    return BASE_S, BASE_L
+end
+NP.LayerScan = LayerScan
+
+local function Layer()
+    if NP.layerDirty then
+        NP.layerDirty = nil
+        LayerScan()
+    end
+    return BASE_S, BASE_L
+end
+NP.Layer = Layer
+
 local body, strip, planTitle, planRows, skillTitle, skillRows
 local headers, nodes = {}, {}
+local function Mine()
+    return NP.ours == true and body ~= nil
+end
+NP.Mine = Mine
+
+local function TalentPageOn()
+    local pf = _G.PlayerSpellsFrame
+    if not (pf and pf.IsShown and pf:IsShown()) then return false end
+    local id = pf.GetTab and pf:GetTab()
+    if id ~= nil and pf.talentTabID then return id == pf.talentTabID end
+    local tf = pf.TalentsFrame
+    return (tf and tf.IsShown and tf:IsShown()) and true or false
+end
+NP.TalentPageOn = TalentPageOn
 local applyBtn, resetBtn, viewBtn, seqBtn, planHeader, skillHeader
-local needCard, needAmount
+local needCard, needAmount, spentCard, spentAmount
 local LinkOK, LinkBlockName
 local badgeLayer
 local skinFacade, skinBtns = nil, {}
 local skinRegistered = false
 
 local euiBG = { 0.05, 0.05, 0.06, 0.62 }
+
+local function SkinTabEUI()
+    local b = NP.tab
+    if not (b and skinFacade and skinFacade.Tab) then return false end
+    local ok = pcall(skinFacade.Tab, b, { darkActive = true })
+    if ok and skinFacade.SetTabSelection then
+        pcall(skinFacade.SetTabSelection, b, b.__check == true)
+    end
+    return ok
+end
 
 local function SkinButtonEUI(b)
     if not b or b.__dfSkin then return end
@@ -103,6 +175,7 @@ local function TrySkinRegister()
                 if b.__dfBg then b.__dfBg:SetColorTexture(euiBG[1], euiBG[2], euiBG[3], euiBG[4]) end
             end
         end
+        SkinTabEUI()
     end)
     return true
 end
@@ -141,6 +214,20 @@ end
 local function Plans()
     local cls = NP.cls
     return cls and TP and TP[string.upper(cls)]
+end
+
+function NP.RecPlan()
+    local list = Plans() or {}
+    if NP.recPlan and NP.recPlanCls == NP.cls then return NP.recPlan end
+    local pick = list[1]
+    for i = 1, #list do
+        if list[i].seq and list[i].name then
+            pick = list[i]
+            break
+        end
+    end
+    NP.recPlan, NP.recPlanCls = pick, NP.cls
+    return pick
 end
 
 local function SimSig()
@@ -309,18 +396,18 @@ end
 
 local function TipBegin(owner, anchor)
     GameTooltip:SetOwner(owner, anchor or 'ANCHOR_RIGHT')
-    if ns.hui and ns.hui.ShowNativeTip then
-        pcall(ns.hui.ShowNativeTip, GameTooltip)
-    end
 end
 
 local function BuildBackground(b)
     local d = Data()
     local art = d and ART[d.key] or ART.rogue
+    local base = b:CreateTexture(nil, 'BACKGROUND')
+    base:SetAllPoints(b)
+    base:SetColorTexture(0.05, 0.04, 0.03, 1)
     for i = 1, 4 do
         local t = b:CreateTexture(nil, 'OVERLAY', nil, 1)
         t:SetPoint('TOPLEFT', b, 'TOPLEFT', (i - 1) * COLW, 0)
-        t:SetSize(COLW, BODY_H)
+        t:SetSize(COLW, BODY_H + BODY_EXT)
         t:SetTexture(art)
         local a, c = U0 + (U1 - U0) * (i - 1) / 3, U0 + (U1 - U0) * i / 3
         if i == 4 then
@@ -423,7 +510,7 @@ local function BuildNode(t, i, nd)
     badgeBg:Hide()
 
     local badge = badgeLayer:CreateFontString(nil, 'OVERLAY', nil, 1)
-    badge:SetFont('Fonts\\ARKai_T.ttf', 11, 'OUTLINE')
+    badge:SetFont((ns.SafeFont or tostring)('Fonts\\ARKai_T.ttf'), 11, 'OUTLINE')
     badge:SetTextColor(0.10, 1.00, 0.10)
     badge:SetPoint('BOTTOM', badgeBg, 'BOTTOM', 0, 1)
     badge:Hide()
@@ -470,28 +557,17 @@ local function BuildNode(t, i, nd)
     end)
 
     b:SetScript('OnEnter', function(self)
-        TipBegin(self, 'ANCHOR_RIGHT')
-        GameTooltip:ClearLines()
         local p = (NP.pts[self.tree] or {})[self.idx] or 0
-        GameTooltip:AddLine(self.nd.n, 1, 0.82, 0)
-        GameTooltip:AddLine(string.format(L['第%d行第%d列'], self.nd.row, self.nd.col), 0.7, 0.75, 0.82)
-        if self.nd.passive then GameTooltip:AddLine(L['被动'], 0.55, 0.78, 1) end
-        local di = math.min(math.max(p, 1), #self.nd.desc)
-        if self.nd.desc[di] then
-            GameTooltip:AddLine(self.nd.desc[di], 0.9, 0.92, 0.96, true)
-        end
-        if p < self.nd.max and self.nd.desc[p + 1] then
-            GameTooltip:AddLine(string.format(L['下一级：%s'], self.nd.desc[p + 1]), 0.6, 0.65, 0.75, true)
+        local need = 0
+        if not GateOK(self.tree, self.nd.row) then
+            need = (self.nd.row - 1) * 5 - (RowAbove(self.tree)[self.nd.row] or 0)
         end
         local blocker = LinkBlockName and LinkBlockName(self.tree, self.idx)
-        if blocker then
-            GameTooltip:AddLine(string.format(L['需先点满 %s'], blocker), 0.95, 0.45, 0.4, true)
-        elseif not GateOK(self.tree, self.nd.row) then
-            local need = (self.nd.row - 1) * 5
-            local have = RowAbove(self.tree)[self.nd.row] or 0
-            GameTooltip:AddLine(string.format(L['需本系再投入 %d 点'], need - have), 0.95, 0.45, 0.4, true)
+        local d = Data()
+        local tname = d and d.trees[self.tree] and d.trees[self.tree].name or ''
+        if ns.TalentTip then
+            ns.TalentTip(self, self.nd, p, tname, need, blocker ~= nil)
         end
-        GameTooltip:Show()
     end)
     b:SetScript('OnLeave', function() GameTooltip:Hide() end)
 
@@ -718,7 +794,7 @@ local function BuildHeaderRow(y, cols)
 end
 
 local function PlanName()
-    local p = NP.plan
+    local p = NP.plan or NP.RecPlan()
     if not p then return L['未选择方案'] end
     if p.name and p.name ~= '' then return p.name end
     return string.format(L['方案%d'], NP.planIdx or 1)
@@ -933,7 +1009,7 @@ local function SeqOf(plan)
 end
 
 local function PendingSeq(base)
-    local seq = SeqOf(NP.plan)
+    local seq = SeqOf(NP.plan or NP.RecPlan())
     local out = {}
     if not seq then return out end
     local need = {}
@@ -970,37 +1046,50 @@ local function PendingSeq(base)
     return out
 end
 
-local function CurrencyParts()
+local function BuildSpentCard()
     local T = NP.frame
     local cd = T and T.ClassCurrencyDisplay
-    if not cd then return nil, nil end
-    local label
-    local regs = { cd:GetRegions() }
-    for i = 1, #regs do
-        local r = regs[i]
-        if r.GetObjectType and r:GetObjectType() == 'FontString' then label = r break end
-    end
-    local amount
-    local kids = { cd:GetChildren() }
-    for i = 1, #kids do
-        local r2 = { kids[i]:GetRegions() }
-        for j = 1, #r2 do
-            local r = r2[j]
-            if r.GetObjectType and r:GetObjectType() == 'FontString' then amount = r break end
-        end
-        if amount then break end
-    end
-    return label, amount
+    if not (cd and body) or spentCard then return end
+    local f = CreateFrame('Frame', 'DungeonsForeverTalentSpentCard', body)
+    f.__dfMine = true
+    f:SetSize(158, 45)
+    f:SetPoint('RIGHT', cd, 'RIGHT', 0, 0)
+
+    local bg = f:CreateTexture(nil, 'BACKGROUND')
+    bg:SetAtlas('Talents-Square-Box-c60')
+    bg:SetSize(125, 45)
+    bg:SetPoint('RIGHT', f, 'RIGHT', 0, 0)
+
+    local box = CreateFrame('Frame', nil, f)
+    box:SetSize(48, 36)
+    box:SetPoint('RIGHT', f, 'RIGHT', -4, 0)
+    box:SetFrameLevel(f:GetFrameLevel() + 1)
+
+    spentAmount = box:CreateFontString(nil, 'OVERLAY')
+    spentAmount:SetFont((ns.SafeFont or tostring)('Fonts\\ARKai_T.ttf'), 32, '')
+    spentAmount:SetTextColor(0.10, 1.00, 0.10)
+    spentAmount:SetPoint('CENTER')
+    spentAmount:SetText('0')
+
+    local label = f:CreateFontString(nil, 'OVERLAY')
+    label:SetFont((ns.SafeFont or tostring)('Fonts\\ARKai_T.ttf'), 15, '')
+    label:SetTextColor(1, 1, 1)
+    label:SetText(L['已投入天赋'])
+    label:SetPoint('RIGHT', box, 'LEFT', -6, 0)
+
+    f:Hide()
+    spentCard = f
 end
 
 local function BuildNeedCard()
     local T = NP.frame
     local cd = T and T.ClassCurrencyDisplay
     if not cd or needCard then return end
-    local f = CreateFrame('Frame', 'DungeonsForeverTalentNeedCard', cd)
+    local f = CreateFrame('Frame', 'DungeonsForeverTalentNeedCard', body or _G.UIParent)
     f:SetSize(157, 45)
     f:SetPoint('RIGHT', cd, 'LEFT', -10, 0)
-    f:SetFrameLevel(cd:GetFrameLevel())
+    f:SetFrameStrata(cd:GetFrameStrata())
+    f:SetFrameLevel((cd:GetFrameLevel() or 1) + 2)
 
     local bg = f:CreateTexture(nil, 'BACKGROUND')
     bg:SetAtlas('Talents-Square-Box-c60')
@@ -1008,7 +1097,7 @@ local function BuildNeedCard()
     bg:SetPoint('RIGHT', f, 'RIGHT', 0, 0)
 
     local label = f:CreateFontString(nil, 'OVERLAY')
-    label:SetFont('Fonts\\ARKai_T.ttf', 15, '')
+    label:SetFont((ns.SafeFont or tostring)('Fonts\\ARKai_T.ttf'), 15, '')
     label:SetTextColor(1, 1, 1)
     label:SetText(L['等级'])
     label:SetPoint('RIGHT', f, 'RIGHT', -60, 0)
@@ -1019,7 +1108,7 @@ local function BuildNeedCard()
     box:SetFrameLevel(f:GetFrameLevel() + 1)
 
     needAmount = box:CreateFontString(nil, 'OVERLAY')
-    needAmount:SetFont('Fonts\\ARKai_T.ttf', 32, '')
+    needAmount:SetFont((ns.SafeFont or tostring)('Fonts\\ARKai_T.ttf'), 32, '')
     needAmount:SetTextColor(0.10, 1.00, 0.10)
     needAmount:SetPoint('CENTER')
     needAmount:SetText('0')
@@ -1039,28 +1128,26 @@ end
 
 local function CurrencyCard(on)
     local T = NP.frame
-    if not (T and T.ClassCurrencyDisplay) then return end
+    local cd = T and T.ClassCurrencyDisplay
+    if not cd then return end
+    if NP.cdAlpha == nil then NP.cdAlpha = cd:GetAlpha() end
+    BuildSpentCard()
     BuildNeedCard()
-    local label, amount = CurrencyParts()
-    if not label then return end
-    if not NP.curOrig then NP.curOrig = label:GetText() end
-    if on then
-        label:SetText(L['已投入天赋'])
-        if amount then amount:SetText(TotalSpent()) end
-        if needCard then
-            local spent = TotalSpent()
-            needCard:SetShown(spent > 0)
-            if needAmount then needAmount:SetText(StartLv() - 1 + spent) end
-        end
-    else
-        if NP.curOrig then label:SetText(NP.curOrig) end
-        if needCard then needCard:Hide() end
-        if T.RefreshClassCurrencyDisplay then T:RefreshClassCurrencyDisplay() end
+    pcall(cd.SetAlpha, cd, on and 0 or NP.cdAlpha)
+    local spent = TotalSpent()
+    if spentCard then
+        spentCard:SetShown(on and true or false)
+        if on and spentAmount then spentAmount:SetText(spent) end
+    end
+    if needCard then
+        needCard:SetShown(on and spent > 0 or false)
+        if on and needAmount then needAmount:SetText(StartLv() - 1 + spent) end
     end
 end
 
 local function SeqMap(pending)
     local map = { {}, {}, {} }
+    local off = StartLv() - 1
     for i = 1, #pending do
         local p = pending[i]
         local m = map[p.t]
@@ -1069,7 +1156,7 @@ local function SeqMap(pending)
             list = {}
             m[p.i] = list
         end
-        list[#list + 1] = i
+        list[#list + 1] = (p.lv or (off + i)) - off
     end
     return map
 end
@@ -1105,11 +1192,15 @@ end
 
 local function BuildSeqMap(pending)
     if NP.seqOn == nil then NP.seqOn = DB().seqOn ~= false end
-    if not NP.seqOn or not NP.cls or not NP.plan then
+    if not NP.seqOn or not NP.cls or not (NP.plan or NP.RecPlan()) then
         NP.seqMap = nil
+        NP.nextPending = nil
         return nil
     end
-    NP.seqMap = SeqMap(pending or PendingSeq())
+    pending = pending or PendingSeq()
+    NP.seqMap = SeqMap(pending)
+    local first = pending[1]
+    NP.nextPending = first and { t = first.t, i = first.i } or nil
     return NP.seqMap
 end
 
@@ -1118,10 +1209,12 @@ local function SeqLayer()
     local TF = PF and PF.TalentsFrame
     if not TF then return nil end
     local L = NP.seqLayer
-    if L and L:GetParent() == TF then return L end
-    L = CreateFrame('Frame', nil, TF)
+    if L then return L end
+    L = CreateFrame('Frame', nil, _G.UIParent)
     L:SetAllPoints(TF)
-    L:SetFrameLevel((TF:GetFrameLevel() or 100) + 1600)
+    local layS, layL = Layer()
+    L:SetFrameStrata(layS)
+    L:SetFrameLevel(layL + 2)
     NP.seqLayer = L
     return L
 end
@@ -1150,33 +1243,83 @@ local function SeqBadge(btn)
     return fs, bg
 end
 
+function NP.SeqGlow(btn)
+    local lay = SeqLayer()
+    if not lay then return nil end
+    local tx, ag = btn.__dfGlow, btn.__dfGlowAg
+    if tx and tx:GetParent() == lay then return tx, ag end
+    tx = lay:CreateTexture(nil, 'OVERLAY')
+    if tx.SetAtlas then tx:SetAtlas('talents-node-square-greenglow', false) end
+    local w = (btn.GetWidth and btn:GetWidth()) or 40
+    if type(w) ~= 'number' or w <= 0 then w = 40 end
+    tx:SetSize(w * 2.1, w * 2.1)
+    tx:SetPoint('CENTER', btn, 'CENTER', 0, 0)
+    tx:SetBlendMode('ADD')
+    tx:SetAlpha(0)
+    ag = tx:CreateAnimationGroup()
+    ag:SetLooping('BOUNCE')
+    local a = ag:CreateAnimation('Alpha')
+    a:SetFromAlpha(0.30)
+    a:SetToAlpha(0.95)
+    a:SetDuration(1.4)
+    a:SetSmoothing('IN_OUT')
+    btn.__dfGlow, btn.__dfGlowAg = tx, ag
+    return tx, ag
+end
+
+function NP.SeqGlowStop()
+    local b = NP.glowBtn
+    if not b then return end
+    if b.__dfGlowAg then b.__dfGlowAg:Stop() end
+    if b.__dfGlow then b.__dfGlow:SetAlpha(0) end
+    NP.glowBtn = nil
+end
+
+function NP.SeqGlowTo(btn)
+    if NP.glowBtn == btn then return end
+    NP.SeqGlowStop()
+    if not btn then return end
+    local tx, ag = NP.SeqGlow(btn)
+    if tx then tx:SetAlpha(0.30) end
+    if ag then ag:Play() end
+    NP.glowBtn = btn
+end
+
 local function RefreshNativeSeq()
     local PF = _G.PlayerSpellsFrame
     local TF = PF and PF.TalentsFrame
     local map = TF and TF.nodeIDToButton
     local byName = NP.byName
-    if not (map and byName) then return end
+    if not (map and byName) then
+        NP.SeqGlowStop()
+        return
+    end
     local nos = NP.seqMap
     local L = SeqLayer()
     if L then
         local T = NP.frame
-        local mine = (T and body and T:GetTab() == NP.tabID) and true or false
-        L:SetShown(not mine)
-        local peak = (TF:GetFrameLevel() or 100) + 1600
+        local mine = Mine()
+        local tfOn = (T and T.IsShown and T:IsShown()) and true or false
+        L:SetShown(not mine and tfOn)
+        local _, layL = Layer()
+        local peak = (layL or 100) + 2
         for _, btn in pairs(map) do
             local lv = btn:GetFrameLevel()
             if lv and lv + 10 > peak then peak = lv + 10 end
         end
         if L:GetFrameLevel() ~= peak then L:SetFrameLevel(peak) end
     end
+    local nextBtn
+    local nxt = NP.nextPending
     for _, btn in pairs(map) do
         local fs, bg = SeqBadge(btn)
-        local txt
+        local txt, list
         if nos and fs then
             local pos = byName[NativeSpellName(btn) or '']
             if pos then
-                local list = nos[pos.t] and nos[pos.t][pos.i]
+                list = nos[pos.t] and nos[pos.t][pos.i]
                 if list and #list > 0 then txt = SeqText(list) end
+                if nxt and pos.t == nxt.t and pos.i == nxt.i then nextBtn = btn end
             end
         end
         if txt then
@@ -1184,22 +1327,24 @@ local function RefreshNativeSeq()
             bg:SetWidth(math.max(20, fs:GetStringWidth() + 6))
             fs:Show()
             bg:Show()
+            if list and list[1] == 1 then nextBtn = btn end
         elseif fs then
             fs:Hide()
             bg:Hide()
         end
     end
+    if Mine() then nextBtn = nil end
+    NP.SeqGlowTo(nextBtn)
+end
+
+function NP.RefreshNativeSeq()
+    RefreshNativeSeq()
 end
 
 local function HookNativeTalents()
-    local PF = _G.PlayerSpellsFrame
-    local TF = PF and PF.TalentsFrame
-    if TF and not TF.__dfSeqHook then
-        TF.__dfSeqHook = true
-        TF:HookScript('OnShow', function() if NP.SyncPlan then NP.SyncPlan() end end)
-    end
+    if InCombat() then return false end
     RefreshNativeSeq()
-    return TF and TF.__dfSeqHook and true or false
+    return true
 end
 
 local function NativeSeqWatch()
@@ -1208,6 +1353,10 @@ local function NativeSeqWatch()
     NP.seqWatch = f
     local acc, tries = 0, 0
     f:SetScript('OnUpdate', function(self, dt)
+        if InCombat() then
+            acc = 0
+            return
+        end
         acc = acc + (dt or 0)
         if acc < 0.3 then return end
         acc = 0
@@ -1223,6 +1372,7 @@ local function LiveCached()
     local now = (GetTime and GetTime()) or 0
     local c = NP.liveCache
     if c and (now - c.at) < 1.0 then return c.read end
+    if InCombat() then return c and c.read or nil end
     local read = NP.LiveRead and NP.LiveRead() or nil
     NP.liveCache = { at = now, read = read }
     return read
@@ -1298,7 +1448,7 @@ local function UpdateLists(pending)
         shownRows = shownRows + 1
         local row = planRows[shownRows]
         local it = oop[i]
-        if row.seq then row.seq:SetText('◇') end
+        if row.seq then row.seq:SetText(ns.SYM.dia0) end
         row.ic:SetTexture('Interface\\Icons\\' .. tostring(it.nd.icon))
         row.ic:SetDesaturated(true)
         row.lv:SetText('')
@@ -1496,8 +1646,7 @@ end
 
 NP.LiveRead = LiveRead
 
-function NP.SyncFromLive()
-    local read = LiveRead()
+local function SeedFromRead(read)
     if not read then return false end
     local d = Data()
     if not d then return false end
@@ -1514,7 +1663,15 @@ function NP.SyncFromLive()
     return true
 end
 
+function NP.SyncFromLive()
+    return SeedFromRead(LiveRead())
+end
+
 local function DoApply(read, queue, cap)
+    if InCombat() then
+        print('|cff46bf72[天赋]|r ' .. L['战斗中无法更改天赋'])
+        return
+    end
     local purchased, failed = 0, nil
     for _, it in ipairs(queue) do
         if purchased >= cap then break end
@@ -1550,6 +1707,10 @@ local function DoApply(read, queue, cap)
 end
 
 function NP.ApplyLive()
+    if InCombat() then
+        print('|cff46bf72[天赋]|r ' .. L['战斗中无法更改天赋'])
+        return
+    end
     local read = LiveRead()
     if not read then
         print('|cff46bf72[天赋]|r ' .. L['拿不到角色天赋配置（先打开一次游戏内天赋界面）'])
@@ -1900,7 +2061,7 @@ local function BuildStrip()
     strip = CreateFrame('Frame', nil, body)
     strip:SetPoint('TOPLEFT', body, 'TOPLEFT', 0, -(66 - TOP))
     strip:SetSize(760, 22)
-    strip:SetFrameLevel(1012)
+    strip:SetFrameLevel(body:GetFrameLevel() + 12)
 
     local bPlan = MakeButton(strip, 96, L['方案'], 40, 0)
     bPlan:SetScript('OnClick', function(self) ShowPlanMenu(self) end)
@@ -1947,18 +2108,20 @@ local function BuildStrip()
 end
 
 local function BuildApplyButton(T)
-    applyBtn = Skinnable(CreateFrame('Button', nil, T, 'UIPanelButtonNoTooltipTemplate'))
+    applyBtn = Skinnable(CreateFrame('Button', nil, body, 'UIPanelButtonNoTooltipTemplate'))
+    applyBtn.__dfMine = true
     applyBtn:SetSize(164, 22)
-    applyBtn:SetPoint('TOPLEFT', T, 'TOPLEFT', 524, -651)
-    applyBtn:SetFrameLevel(1013)
+    applyBtn:SetPoint('TOPLEFT', body, 'TOPLEFT', 524, -601)
+    applyBtn:SetFrameLevel(body:GetFrameLevel() + 13)
     applyBtn:SetText(L['一键加点'])
     applyBtn:SetScript('OnClick', function() NP.ApplyLive() end)
     applyBtn:Hide()
 
-    resetBtn = CreateFrame('Button', 'DungeonsForeverTalentReset', T)
+    resetBtn = CreateFrame('Button', 'DungeonsForeverTalentReset', body)
+    resetBtn.__dfMine = true
     resetBtn:SetSize(25, 25)
-    resetBtn:SetPoint('TOPLEFT', T, 'TOPLEFT', 702, -650)
-    resetBtn:SetFrameLevel(1013)
+    resetBtn:SetPoint('TOPLEFT', body, 'TOPLEFT', 702, -600)
+    resetBtn:SetFrameLevel(body:GetFrameLevel() + 13)
     local ic = resetBtn:CreateTexture(nil, 'ARTWORK')
     ic:SetAtlas('talents-button-undo')
     ic:SetSize(21, 20)
@@ -1982,14 +2145,234 @@ local function BuildApplyButton(T)
     resetBtn:Hide()
 end
 
+local function TabMark(tab, on)
+    if not tab then return end
+    if tab.SetTabSelected then pcall(tab.SetTabSelected, tab, on and true or false) end
+    if skinFacade and skinFacade.SetTabSelection then pcall(skinFacade.SetTabSelection, tab, on and true or false) end
+end
+
+local function NativeTabSelect(on)
+    local ts = NP.frame and NP.frame.TabSystem
+    local tabs = ts and ts.tabs
+    if not (tabs and skinFacade and skinFacade.SetTabSelection) then return end
+    for i = 1, #tabs do
+        local t = tabs[i]
+        if t then
+            if on then
+                pcall(skinFacade.SetTabSelection, t, false)
+            else
+                pcall(skinFacade.SetTabSelection, t, nil)
+            end
+        end
+    end
+end
+
+local CHECK_MARK = ' |A:Talents-Checkmark-c60:15:20:0:0|a '
+
+local function TabCheck(btn, on)
+    if not (btn and NP.TabLabel) then return end
+    btn.__check = on and true or false
+    btn:SetText(NP.TabLabel() .. (on and CHECK_MARK or ''))
+end
+
+local TabMasks = {}
+NP.TabMasks = TabMasks
+
+local function TabPlain(tab)
+    local fs = tab and tab.Text
+    local s = (fs and fs.GetText and fs:GetText()) or ''
+    s = s:gsub('|A:.-|a', '')
+    return s
+end
+
+local function TabMask(tab)
+    local mk = TabMasks[tab]
+    if mk then return mk end
+    local ts = NP.frame and NP.frame.TabSystem
+    local tmpl = (ts and ts.tabTemplate) or 'TabSystemButtonTemplate'
+    local ok, b = pcall(CreateFrame, 'Button', nil, _G.UIParent, tmpl)
+    if not (ok and b) then return nil end
+    b.__dfMine = true
+    local layS, layL = Layer()
+    b:SetFrameStrata(layS)
+    b:SetFrameLevel(layL + 18)
+    b:SetAllPoints(tab)
+    b:EnableMouse(false)
+    b.isTabOnTop = tab.isTabOnTop
+    if b.HandleRotation then pcall(b.HandleRotation, b) end
+    if b.SetTabSelected then pcall(b.SetTabSelected, b, false) end
+    b:Hide()
+    TabMasks[tab] = b
+    return b
+end
+
+local function NativeMask(on)
+    local T = NP.frame
+    local ts = T and T.TabSystem
+    local tabs = ts and ts.tabs
+    if not tabs then return end
+    NP.tabAlpha = NP.tabAlpha or {}
+    for i = 1, #tabs do
+        local tab = tabs[i]
+        if tab then
+            if on then
+                local mk = TabMask(tab)
+                if mk then
+                    if NP.tabAlpha[tab] == nil then NP.tabAlpha[tab] = tab:GetAlpha() end
+                    if mk.Text then mk.Text:SetText(TabPlain(tab)) end
+                    pcall(tab.SetAlpha, tab, 0)
+                    mk:Show()
+                end
+            else
+                local mk = TabMasks[tab]
+                if mk then mk:Hide() end
+                if NP.tabAlpha[tab] ~= nil then
+                    pcall(tab.SetAlpha, tab, NP.tabAlpha[tab])
+                    NP.tabAlpha[tab] = nil
+                end
+            end
+        end
+    end
+end
+
+local function CardLayer(on)
+    local T = NP.frame
+    if not T then return end
+    local layS, layL = Layer()
+    local base = layL + 20
+    if spentCard then
+        pcall(spentCard.SetFrameStrata, spentCard, layS)
+        pcall(spentCard.SetFrameLevel, spentCard, base)
+    end
+    if needCard then
+        pcall(needCard.SetFrameStrata, needCard, layS)
+        pcall(needCard.SetFrameLevel, needCard, base + 2)
+    end
+end
+
+local function Relayer()
+    if not body then return end
+    local layS, layL = Layer()
+    local old = body:GetFrameLevel() or 0
+    body:SetFrameStrata(layS)
+    local d = layL - old
+    local floorL = layL + 1
+    local function shift(f, depth)
+        if depth > 5 then return end
+        local kids = { f:GetChildren() }
+        for i = 1, #kids do
+            local c = kids[i]
+            local cl = c:GetFrameLevel()
+            if cl then
+                local nl = cl + d
+                if nl < floorL then nl = floorL end
+                pcall(c.SetFrameLevel, c, nl)
+            end
+            pcall(c.SetFrameStrata, c, layS)
+            shift(c, depth + 1)
+        end
+    end
+    shift(body, 0)
+    body:SetFrameLevel(layL)
+    for _, b in ipairs({ applyBtn, resetBtn }) do
+        if b then
+            local bl = b:GetFrameLevel()
+            if bl then pcall(b.SetFrameLevel, b, bl + d) end
+            pcall(b.SetFrameStrata, b, layS)
+        end
+    end
+    local tb = NP.tab
+    if tb then
+        pcall(tb.SetFrameStrata, tb, layS)
+        pcall(tb.SetFrameLevel, tb, layL + 20)
+    end
+end
+NP.Relayer = Relayer
+
+local function NativeTabsPaint(on)
+    local T = NP.frame
+    local ts = T and T.TabSystem
+    if not (ts and ts.tabs) then return end
+    for _, tab in ipairs(ts.tabs) do
+        if tab and tab ~= NP.tab then
+            local sel = (not on) and tab.IsSelected and tab:IsSelected() and true or false
+            for _, r in ipairs({ tab:GetRegions() }) do
+                if r and r.GetAtlas then
+                    local ok, a = pcall(r.GetAtlas, r)
+                    if ok and a then
+                        if string.find(a, 'activetab', 1, true) then
+                            pcall(r.SetShown, r, sel)
+                        elseif string.find(a, 'uiframe-tab', 1, true) then
+                            local oka, al = pcall(r.GetAlpha, r)
+                            if oka and type(al) == 'number' and al >= 0.99 then
+                                pcall(r.SetShown, r, not sel)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+NP.NativeTabsPaint = NativeTabsPaint
+
+local function SyncTabs(on)
+    if not on then CardLayer(false) end
+    NP.layerDirty = true
+    Relayer()
+    if on then CardLayer(true) end
+    if not NP.tab then return end
+    if not InCombat() then NativeTabsPaint(on) end
+    TabMark(NP.tab, on and true or false)
+    TabCheck(NP.tab, on and true or false)
+    NativeTabSelect(on)
+    local c = NP.catcher
+    if c then
+        if on then
+            local layS, layL = Layer()
+            pcall(c.SetFrameStrata, c, layS)
+            pcall(c.SetFrameLevel, c, layL + 16)
+        end
+        pcall(c.EnableMouse, c, on and true or false)
+    end
+end
+
+local function NativeAlpha(f, show)
+    if not f then return end
+    local o = NP.alphaOrig
+    if not o then
+        o = {}
+        NP.alphaOrig = o
+    end
+    if o[f] == nil then o[f] = (f.GetAlpha and f:GetAlpha()) or 1 end
+    pcall(f.SetAlpha, f, show and o[f] or 0)
+end
+NP.NativeAlpha = NativeAlpha
+
+local function NativeMouse(f, show)
+    if not f or not f.EnableMouse then return end
+    if InCombat() then return end
+    pcall(f.EnableMouse, f, show and true or false)
+end
+
+local function PaintNative(on)
+    local T = NP.frame
+    if not T then return end
+    if on and T.SetDisabledOverlayShown then pcall(T.SetDisabledOverlayShown, T, false) end
+    SyncTabs(on)
+end
+
 local function ApplyState(on)
     local T = NP.frame
     if not (T and body) then return end
-    local tab = T.TabSystem and T.TabSystem.tabs[NP.tabID]
     if on then
         if not NP.pts then NP.pts = { {}, {}, {} } end
         if not NP.seeded then
-            NP.seeded = NP.SyncFromLive() or true
+            if InCombat() then
+                SeedFromRead(LiveCached())
+            else
+                NP.seeded = NP.SyncFromLive() or true
+            end
         end
         body:Show()
         if NP.seqLayer then NP.seqLayer:Hide() end
@@ -1997,16 +2380,6 @@ local function ApplyState(on)
         if viewBtn then viewBtn:Show() end
         if seqBtn then seqBtn:Show() end
         if resetBtn then resetBtn:Show() end
-        if T.SetDisabledOverlayShown then T:SetDisabledOverlayShown(false) end
-        if T.ActiveSpec then T.ActiveSpec:Hide() end
-        if T.ButtonsParent then T.ButtonsParent:Hide() end
-        if T.ApplyButton then T.ApplyButton:Hide() end
-        if T.ResetButton then T.ResetButton:Hide() end
-        if T.UndoButton then T.UndoButton:Hide() end
-        if T.treeHeaders then
-            for i = 1, #T.treeHeaders do T.treeHeaders[i]:Hide() end
-        end
-        if tab and tab.SetIsActive then tab:SetIsActive(true) end
     else
         body:Hide()
         if NP.seqLayer then NP.seqLayer:Show() end
@@ -2014,25 +2387,107 @@ local function ApplyState(on)
         if viewBtn then viewBtn:Hide() end
         if seqBtn then seqBtn:Hide() end
         if resetBtn then resetBtn:Hide() end
-        if T.ButtonsParent then T.ButtonsParent:Show() end
-        if T.ApplyButton then T.ApplyButton:Show() end
-        if T.ActiveSpec then T.ActiveSpec:Show() end
-        if T.treeHeaders then
-            for i = 1, #T.treeHeaders do T.treeHeaders[i]:Show() end
-        end
-        if tab and tab.SetIsActive then tab:SetIsActive(false) end
-        CurrencyCard(false)
     end
+    if InCombat() then
+        NP.paintPending = on and true or false
+    else
+        NP.paintPending = nil
+    end
+    PaintNative(on)
+    if not on then CurrencyCard(false) end
 end
 
 NP.ApplyState = ApplyState
 
+local function FlushCombat()
+    if InCombat() then
+        if not NP.flushWait then
+            NP.flushWait = true
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0.5, function()
+                    NP.flushWait = nil
+                    FlushCombat()
+                end)
+            end
+        end
+        return
+    end
+    NP.flushWait = nil
+    if NP.needBuild then
+        NP.needBuild = nil
+        if NP.Init then NP.Init() end
+    end
+    local T = NP.frame
+    if NP.tabBack then
+        NP.tabBack = nil
+        local PF = _G.PlayerSpellsFrame
+        local panelShown = PF and PF.IsShown and PF:IsShown()
+        if not panelShown and Mine() then
+            NP.Leave()
+        end
+    end
+    if NP.paintPending ~= nil then
+        local on = NP.paintPending
+        NP.paintPending = nil
+        ApplyState(on and Mine() or false)
+    end
+    HookNativeTalents()
+    if Mine() then
+        CurrencyCard(true)
+        Refresh()
+    end
+end
+NP.FlushCombat = FlushCombat
+
+local function RequestNativeTab()
+    if not Mine() then return end
+    NP.tabBack = true
+    if InCombat() then
+        NP.Leave()
+        return
+    end
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, FlushCombat)
+    else
+        FlushCombat()
+    end
+end
+NP.RequestNativeTab = RequestNativeTab
+
 function NP.SyncShow()
     local T = NP.frame
     if not (T and body) then return end
-    local on = T:GetTab() == NP.tabID
+    local on = Mine()
     ApplyState(on)
-    if on then Refresh() end
+    if on then
+        Refresh()
+    else
+        RefreshNativeSeq()
+    end
+end
+
+function NP.Enter()
+    if not body or not NP.frame then return end
+    if not TalentPageOn() then
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0, function()
+                if TalentPageOn() then NP.Enter() end
+            end)
+        end
+        return
+    end
+    NP.ours = true
+    NP.paintPending = nil
+    ApplyState(true)
+    Refresh()
+end
+
+function NP.Leave()
+    if not NP.ours then return end
+    NP.ours = false
+    NP.paintPending = nil
+    ApplyState(false)
+    RefreshNativeSeq()
 end
 
 function NP.Build(T)
@@ -2047,10 +2502,14 @@ function NP.Build(T)
     if RestoreSim() then NP.seeded = true end
     SyncCur()
 
-    body = CreateFrame('Frame', 'DungeonsForeverTalentPage', T)
-    body:SetSize(BODY_W, BODY_H)
+    body = CreateFrame('Frame', 'DungeonsForeverTalentPage', _G.UIParent)
+    body.__dfMine = true
+    body:SetSize(BODY_W, BODY_H + BODY_EXT)
+    body:EnableMouse(true)
+    local layS, layL = Layer()
+    body:SetFrameStrata(layS)
+    body:SetFrameLevel(layL)
     body:SetPoint('TOPLEFT', T, 'TOPLEFT', 0, -TOP)
-    body:SetFrameLevel(1000)
     body:Hide()
 
     BuildBackground(body)
@@ -2078,8 +2537,6 @@ function NP.Build(T)
     BuildStrip()
     BuildApplyButton(T)
 
-    if T.ClassCurrencyDisplay then T.ClassCurrencyDisplay:SetFrameLevel(1100) end
-
     if not NP.guard then
         local g = CreateFrame('Frame')
         g:RegisterEvent('PLAYER_TALENT_UPDATE')
@@ -2088,13 +2545,19 @@ function NP.Build(T)
         g:RegisterEvent('CHARACTER_POINTS_CHANGED')
         g:RegisterEvent('SPELLS_CHANGED')
         g:RegisterEvent('PLAYER_LEVEL_UP')
-        g:SetScript('OnEvent', function()
+        g:RegisterEvent('PLAYER_REGEN_ENABLED')
+        g:SetScript('OnEvent', function(_, event)
+            if event == 'PLAYER_REGEN_ENABLED' then
+                FlushCombat()
+                return
+            end
             if not body then return end
             SyncCur()
-            if NP.frame and NP.frame:GetTab() == NP.tabID then
+            if Mine() then
                 ApplyState(true)
                 Refresh()
             else
+                if NP.viewMode ~= 'plan' then NP.SyncFromLive() end
                 NP.SyncPlan()
             end
             if C_Timer and C_Timer.After and not NP.planDefer then
@@ -2108,14 +2571,14 @@ function NP.Build(T)
         NP.guard = g
         if hooksecurefunc then
             hooksecurefunc(T, 'RefreshTreeHeaders', function()
-                if NP.frame and body and NP.frame:GetTab() == NP.tabID then ApplyState(true) end
+                if Mine() then ApplyState(true) end
             end)
             hooksecurefunc(T, 'InitializeActiveSpec', function()
-                if NP.frame and body and NP.frame:GetTab() == NP.tabID then ApplyState(true) end
+                if Mine() then ApplyState(true) end
             end)
             if T.ClassCurrencyDisplay then
                 hooksecurefunc(T.ClassCurrencyDisplay, 'SetAmount', function()
-                    if NP.frame and body and NP.frame:GetTab() == NP.tabID then CurrencyCard(true) end
+                    if Mine() then CurrencyCard(true) end
                 end)
             end
         end
@@ -2123,57 +2586,148 @@ function NP.Build(T)
 
     if not NP.hooked then
         NP.hooked = true
-        local ts = T.TabSystem
-        if ts and ts.SetTabSelectedCallback then
-            ts:SetTabSelectedCallback(function(tabID, isUserAction)
-                ClassTalentsFrameMixin.SetTab(T, tabID, isUserAction)
-                NP.SyncShow()
-            end)
-        end
         if hooksecurefunc then
             hooksecurefunc(T, 'SetTab', function()
-                NP.SyncShow()
+                if NP.ours then NP.Leave() end
                 HookNativeTalents()
             end)
         end
     end
 
     NP.SyncShow()
-    if NP.frame:GetTab() ~= NP.tabID then NP.SyncPlan() end
+    if not Mine() then NP.SyncPlan() end
     NativeSeqWatch()
 end
 
 local function TabLabel()
     return TAB_LOGO .. L['天赋模拟']
 end
+NP.TabLabel = TabLabel
+
+local function BuildCatcher(ts)
+    local c = CreateFrame('Button', nil, _G.UIParent)
+    c.__dfMine = true
+    local layS, layL = Layer()
+    c:SetFrameStrata(layS)
+    c:SetFrameLevel(layL + 16)
+    c:SetPoint('TOPLEFT', ts, 'TOPLEFT', -2, 8)
+    c:SetPoint('BOTTOMRIGHT', ts, 'BOTTOMRIGHT', 2, -8)
+    c:RegisterForClicks('AnyUp')
+    c:EnableMouse(false)
+    c:SetScript('OnClick', function()
+        if NP.ours then NP.Leave() end
+    end)
+    NP.catcher = c
+end
+
+local function FitTab(btn, ts)
+    if not (btn and ts) then return end
+    local ref = ts.tabs and ts.tabs[1]
+    btn.isTabOnTop = ref and ref.isTabOnTop or false
+    if btn.HandleRotation then pcall(btn.HandleRotation, btn) end
+    TabCheck(btn, btn.__check)
+    local w = ref and ref.GetWidth and ref:GetWidth() or 150
+    if w and w > 0 then
+        btn:SetWidth(w)
+        if btn.Text then btn.Text:SetWidth(w - 10) end
+    end
+end
+
+local function BuildTab(ts)
+    local tmpl = ts.tabTemplate or 'TabSystemButtonTemplate'
+    local ok, btn = pcall(CreateFrame, 'Button', 'DungeonsForeverTalentTab', _G.UIParent, tmpl)
+    if not (ok and btn) then
+        ok, btn = pcall(CreateFrame, 'Button', 'DungeonsForeverTalentTab', _G.UIParent, 'TabSystemButtonTemplate')
+    end
+    if not (ok and btn) then return false end
+    local layS, layL = Layer()
+    btn:SetFrameStrata(layS)
+    btn:SetFrameLevel(layL + 20)
+    btn:SetPoint('LEFT', ts, 'RIGHT', 1, 0)
+    btn:SetScript('OnClick', function()
+        if NP.ours then NP.Leave() else NP.Enter() end
+    end)
+    FitTab(btn, ts)
+    TabMark(btn, false)
+    if not NP.catcher then BuildCatcher(ts) end
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function() FitTab(btn, ts) end)
+        C_Timer.After(0.3, function() FitTab(btn, ts) end)
+    end
+    btn.__dfMine = true
+    NP.tab = btn
+    SkinTabEUI()
+    return true
+end
+
+local function Follow()
+    if NP.follow then return end
+    local f = CreateFrame('Frame')
+    f:SetScript('OnUpdate', function()
+        local pf = _G.PlayerSpellsFrame
+        local pfShown = (pf and pf.IsShown and pf:IsShown()) and true or false
+        if NP.pfWas == nil then NP.pfWas = pfShown end
+        if NP.pfWas ~= pfShown then
+            NP.pfWas = pfShown
+            if pfShown then
+                if NP.needBuild and NP.Init then NP.Init() end
+                if NP.ours then NP.SyncShow() end
+            elseif NP.RequestNativeTab then
+                NP.RequestNativeTab()
+            end
+        end
+        local liveSpent = LiveCached()
+        local spentNow = liveSpent and liveSpent.spent or nil
+        if spentNow and spentNow ~= NP.liveSpentSeen then
+            NP.liveSpentSeen = spentNow
+            if not Mine() and NP.viewMode ~= 'plan' then
+                NP.SyncFromLive()
+                NP.SyncPlan()
+            end
+        end
+        local T = NP.frame
+        local tfShown = (T and T.IsShown and T:IsShown()) and true or false
+        if NP.tfWas == nil then NP.tfWas = tfShown end
+        if NP.tfWas ~= tfShown then
+            NP.tfWas = tfShown
+            if tfShown and NP.SyncPlan then NP.SyncPlan() end
+        end
+        local shown = TalentPageOn()
+        if NP.tab and NP.tab:IsShown() ~= shown then NP.tab:SetShown(shown) end
+        if NP.catcher and NP.catcher:IsShown() ~= shown then NP.catcher:SetShown(shown) end
+        if not shown then
+            if body and body:IsShown() then body:Hide() end
+            if NP.seqLayer and NP.seqLayer:IsShown() then NP.seqLayer:Hide() end
+            if NP.ours and not InCombat() then NP.Leave() end
+        end
+    end)
+    NP.follow = f
+end
 
 local function Init()
+    if InCombat() then
+        if not NP.tab then NP.needBuild = true end
+        return false
+    end
     TrySkinRegister()
     if ns.TalentEnhOn and not ns.TalentEnhOn() then return false end
     local T = _G.PlayerSpellsFrame and _G.PlayerSpellsFrame.TalentsFrame
     if not T then return false end
+    NP.nativeTabID = NP.nativeTabID or 1
     if not body then NP.Build(T) end
     if not body then return false end
-    if not NP.tabID then
+    if not NP.tab then
         local ts = T.TabSystem
-        if ts and #ts.tabs == 2 then
-            NP.tabID = T:AddNamedTab(TabLabel())
-        elseif ts and #ts.tabs >= 3 then
-            NP.tabID = 3
-        end
+        if ts then BuildTab(ts) end
+    elseif NP.catcher and T.TabSystem then
+        local c = NP.catcher
+        c:ClearAllPoints()
+        c:SetPoint('TOPLEFT', T.TabSystem, 'TOPLEFT', -2, 8)
+        c:SetPoint('BOTTOMRIGHT', T.TabSystem, 'BOTTOMRIGHT', 2, -8)
     end
-    if NP.tabID then
-        local ts = T.TabSystem
-        local tab = ts and ts.tabs[NP.tabID]
-        if tab and type(tab.tabText) == 'string' and not tab.tabText:find('|T', 1, true) then
-            tab.tabText = TabLabel()
-            if tab.UpdateTabText then tab:UpdateTabText() end
-            if tab.UpdateTabWidth then tab:UpdateTabWidth() end
-            if ts.MarkDirty then ts:MarkDirty() end
-        end
-    end
+    Follow()
     NP.SyncShow()
-    return NP.tabID ~= nil
+    return NP.tab ~= nil
 end
 
 NP.Init = Init
@@ -2203,5 +2757,11 @@ ns.Init(function()
             C_Timer.After(1.0, function() Init() end)
             C_Timer.After(3.0, function() Init() end)
         end
+    end)
+
+    local regen = CreateFrame('Frame')
+    regen:RegisterEvent('PLAYER_REGEN_ENABLED')
+    regen:SetScript('OnEvent', function()
+        if NP.needBuild then FlushCombat() end
     end)
 end)

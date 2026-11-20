@@ -475,7 +475,7 @@ function SR.ReportDiagnose()
         if r.state ~= "top" then
             n = n + 1
             if n <= 12 then
-                local slotText = table.concat(r.slots, "、")
+                local slotText = table.concat(r.slots, L["、"])
                 local from = r.cur or "-"
                 local to = r.best or "-"
                 if r.state == "old" then
@@ -520,22 +520,29 @@ function SR.RowsForAll()
 end
 
 local function CursorSpell()
+    if type(GetCursorInfo) == "function" then
+        local ok, kind = pcall(GetCursorInfo)
+        if ok and kind ~= nil then return kind == "spell" end
+    end
     if type(CursorHasSpell) ~= "function" then return true end
     local ok, v = pcall(CursorHasSpell)
     return ok and v == true
 end
 
 local function Pickup(id)
+    if not id then return false end
+    if C_Spell and type(C_Spell.PickupSpell) == "function" then
+        pcall(C_Spell.PickupSpell, id)
+        if CursorSpell() then return true end
+        if type(ClearCursor) == "function" then pcall(ClearCursor) end
+    end
     if C_SpellBook and C_SpellBook.FindSpellBookSlotForSpell and C_SpellBook.PickupSpellBookItem then
         local ok, bslot, bbank = pcall(C_SpellBook.FindSpellBookSlotForSpell, id)
         if ok and bslot then
             pcall(C_SpellBook.PickupSpellBookItem, bslot, bbank or Bank())
             if CursorSpell() then return true end
+            if type(ClearCursor) == "function" then pcall(ClearCursor) end
         end
-    end
-    if C_Spell and type(C_Spell.PickupSpell) == "function" then
-        pcall(C_Spell.PickupSpell, id)
-        if CursorSpell() then return true end
     end
     return false
 end
@@ -580,7 +587,7 @@ local function Run(rows, onDone)
             if i <= 5 then names[#names + 1] = row.name or "?" end
         end
         local tail = ""
-        if #names > 0 then tail = "：" .. table.concat(names, "、") end
+        if #names > 0 then tail = L["："] .. table.concat(names, L["、"]) end
         Say(string.format(L["%d 项未能升级，请手动拖动"], #bad) .. tail)
     end
     if onDone then onDone(done, bad) end
@@ -695,7 +702,7 @@ function SR.Boot()
         SR.Dirty()
         local rows, seen = {}, {}
         for _, row in ipairs(SR.Scan().rows) do
-            if not row.white and not row.noBar and names[row.name] and not seen[row.name] then
+            if not row.white and names[row.name] and not seen[row.name] then
                 seen[row.name] = true
                 rows[#rows + 1] = row
             end
@@ -724,7 +731,7 @@ function SR.Boot()
                     for _, row in ipairs(SR.Scan().rows) do
                         local k = tostring(row.key)
                         keys[#keys + 1] = k
-                        if lastKeys and not lastKeys[k] and not row.white and not row.noBar then fresh[#fresh + 1] = row end
+                        if lastKeys and not lastKeys[k] and not row.white then fresh[#fresh + 1] = row end
                     end
                     table.sort(keys)
                     local now = {}

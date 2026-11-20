@@ -1,4 +1,4 @@
-local gl = (type(GetLocale) == 'function') and GetLocale() or 'zhCN'
+local gl = (type(DF_Locale) == 'function') and DF_Locale() or 'zhCN'
 if gl ~= 'zhTW' then return end
 
 local _, ns = ...
@@ -21,6 +21,8 @@ ns.DungeonEntry = {
     ["gnomeregan"] = { 1426, 24.4, 39.8, "丹莫羅" },
     ["sunken_temple"] = { 1435, 69.5, 52.5, "悲傷沼澤" },
     ["the_deadmines"] = { 1436, 42.5, 71.7, "西部荒野" },
+    ["the_drowned_city"] = { 1434, 21.5, 27.7, "荊棘谷" },
+    ["kroldok_stronghold"] = { 2548, 37.5, 37.9, "河林" },
     ["excavation_wetlands"] = { 1437, 47.8, 56.3, "溼地" },
     ["blackfathom_deeps"] = { 1440, 14.1, 13.1, "灰谷" },
     ["maraudon"] = { 1443, 29.1, 62.5, "淒涼之地" },
@@ -28,10 +30,16 @@ ns.DungeonEntry = {
     ["dire_maul_north"] = { 1444, 62.5, 24.9, "菲拉斯" },
     ["dire_maul_east"] = { 1444, 64.8, 30.2, "菲拉斯" },
     ["onyxias_lair"] = { 1445, 52.3, 76.1, "塵泥沼澤" },
+    ["alcaz_prison"] = { 1445, 75.3, 14.1, "塵泥沼澤" },
     ["zul_farrak"] = { 1446, 38.7, 20.0, "塔納利斯" },
+    ["blackmaw_hold"] = { 1447, 38.6, 33.2, "艾薩拉" },
+    ["shapers_terrace"] = { 1449, 48.1, 6.1, "安戈洛環形山" },
     ["the_stockade"] = { 1453, 50.4, 66.4, "暴風城" },
     ["ragefire_chasm"] = { 1454, 51.5, 49.7, "奧格瑞瑪" },
     ["hall_of_thanes"] = { 1455, 28.2, 47.7, "鐵爐堡" },
+    ["blackrock_depths"] = { 1427, 45.6, 89.4, "灼熱峽谷" },
+    ["lower_blackrock_spire"] = { 1428, 33.0, 25.2, "燃燒平原" },
+    ["upper_blackrock_spire"] = { 1428, 33.0, 25.2, "燃燒平原" },
 }
 
 ns.DungeonEntryRoute = {

@@ -45,10 +45,16 @@ local hideToken = 0
 local closePending = false
 local lastN = -1
 local pulseFrame, pulseT = nil, 0
+local orbSizeDirty = false
 
 local function Cfg()
     return ns.ZoneHint and ns.ZoneHint.CFG and ns.ZoneHint.CFG() or {}
 end
+
+local function InCombat()
+    return type(InCombatLockdown) == "function" and InCombatLockdown()
+end
+O.InCombat = InCombat
 
 local VOICE_SEC = {
     ["todo_food.ogg"] = 1.45,
@@ -121,6 +127,11 @@ end
 
 local function ApplyOrbSize()
     if not orb then return end
+    if InCombat() then
+        orbSizeDirty = true
+        return
+    end
+    orbSizeDirty = false
     local sz = tonumber(Cfg().icon) or 32
     if sz < 20 then sz = 20 end
     if sz > 44 then sz = 44 end
@@ -177,6 +188,7 @@ local function SavePos()
 end
 
 local function ApplyPos()
+    if InCombat() then return end
     local c = Cfg()
     local o = c.orb
     orb:ClearAllPoints()
@@ -211,13 +223,26 @@ function O.ArmGhost()
     end)
 end
 
+local function CombatHide()
+    if not panel then return end
+    closePending = true
+    hideToken = hideToken + 1
+    job = nil
+    if tweener then tweener:Hide() end
+    if panel.escProxy and panel.escProxy:IsShown() then panel.escProxy:Hide() end
+    if panel:IsShown() then
+        panel:SetAlpha(0)
+        if panel.hoverCatch then panel.hoverCatch:EnableMouse(false) end
+    end
+end
+
 local function Close()
     if not panel or not panel:IsShown() then
         closePending = false
         return
     end
-    if InCombatLockdown and InCombatLockdown() then
-        closePending = true
+    if InCombat() then
+        CombatHide()
         return
     end
     closePending = false
@@ -228,18 +253,34 @@ local function Close()
     end, function()
         panel:Hide()
         panel:SetAlpha(1)
+        if panel.hoverCatch then panel.hoverCatch:EnableMouse(true) end
     end)
 end
 
 local function FlushClose()
     if not closePending then return end
-    if InCombatLockdown and InCombatLockdown() then
+    if InCombat() then
         if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
             C_Timer.After(0.2, FlushClose)
         end
         return
     end
-    Close()
+    closePending = false
+    hideToken = hideToken + 1
+    job = nil
+    if tweener then tweener:Hide() end
+    if panel then
+        if panel:IsShown() then panel:Hide() end
+        panel:SetAlpha(1)
+        if panel.hoverCatch then panel.hoverCatch:EnableMouse(true) end
+    end
+end
+
+local function PanelHover()
+    if not (panel and panel:IsShown()) then return false end
+    if not _G.MouseIsOver then return false end
+    local ok, on = pcall(_G.MouseIsOver, panel)
+    return ok and on and true or false
 end
 
 local function StartHideTimer(keep)
@@ -252,8 +293,18 @@ local function StartHideTimer(keep)
         if my ~= hideToken then return end
         if foodMenu and foodMenu:IsShown() then return end
         if opts and opts:IsShown() then return end
-        if panel and panel:IsShown() and not hovered then Close() end
+        if panel and panel:IsShown() and not hovered and not PanelHover() then Close() end
     end)
+end
+
+local function HoverOn()
+    hovered = true
+    hideToken = hideToken + 1
+end
+
+local function HoverOff()
+    hovered = false
+    StartHideTimer()
 end
 
 local function SubText(s)
@@ -420,6 +471,8 @@ end
 
 Tip = function(owner, title, desc, foot)
     if not (GameTooltip and owner) then return end
+    hovered = true
+    hideToken = hideToken + 1
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     GameTooltip:ClearLines()
     GameTooltip:AddLine(title or "", 1, 1, 1, true)
@@ -493,17 +546,14 @@ local function MarkOnMap(it)
         if ok then return true end
     end
     local mapID = it.mapID or (current and current.ctx and current.ctx.mapID)
-    if mapID and it.x and it.y and UiMapPoint and UiMapPoint.CreateFromCoordinates
-       and C_Map and C_Map.SetUserWaypoint then
-        local ok, pt = pcall(UiMapPoint.CreateFromCoordinates, mapID, it.x / 100, it.y / 100)
-        if ok and pt then
-            pcall(C_Map.SetUserWaypoint, pt)
-            if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
-                pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
-            end
-            if C_Map.OpenWorldMap then pcall(C_Map.OpenWorldMap, mapID) end
-            return true
+    if mapID and it.x and it.y and C_Map and C_Map.SetUserWaypoint and _G.CreateVector2D then
+        local pt = { uiMapID = mapID, position = _G.CreateVector2D(it.x / 100, it.y / 100) }
+        pcall(C_Map.SetUserWaypoint, pt)
+        if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
+            pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
         end
+        if C_Map.OpenWorldMap then pcall(C_Map.OpenWorldMap, mapID) end
+        return true
     end
     if it.qid and ns.MapUI and ns.MapUI.GotoQuest then
         pcall(ns.MapUI.GotoQuest, it.qid, false)
@@ -512,10 +562,38 @@ local function MarkOnMap(it)
     return false
 end
 
+local function TalentClick(r)
+    if r.talentClick or InCombatLockdown() then return r.talentClick end
+    local click = CreateFrame("Button", nil, r, "SecureActionButtonTemplate,SecureHandlerStateTemplate")
+    click:SetPoint("TOPLEFT", r, "TOPLEFT", 0, 0)
+    click:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", -34, 0)
+    click:SetFrameLevel(r:GetFrameLevel() + 4)
+    click:SetAttribute("type", "click")
+    click:SetAttribute("clickbutton", _G.TalentMicroButton)
+    click:SetAttribute("useOnKeyDown", false)
+    click:RegisterForClicks("AnyUp", "AnyDown")
+    click:SetScript("OnEnter", function() local f = r:GetScript("OnEnter"); if f then f(r) end end)
+    click:SetScript("OnLeave", function() local f = r:GetScript("OnLeave"); if f then f(r) end end)
+    if RegisterStateDriver then
+        RegisterStateDriver(click, "combatlock", "[combat] combat; nocombat")
+        click:SetAttribute("_onstate-combatlock", [[
+            if newstate == 'combat' then
+                self:SetAttribute('type', nil)
+            else
+                self:SetAttribute('type', 'click')
+            end
+        ]])
+    end
+    click:Hide()
+    r.talentClick = click
+    return click
+end
+
 local function MakeRow(i)
     local r = subRows[i]
     if r then return r end
     r = CreateFrame("Button", nil, panel, "BackdropTemplate")
+    if not InCombatLockdown() then r:SetFrameLevel(panel:GetFrameLevel() + 2) end
     local fx = ns.hui and ns.hui.HuiCardFX and ns.hui.HuiCardFX(r, 6, 1)
     if not fx and ns.hui and ns.hui.SkinPopup and ns.hui.layer then
         ns.hui.SkinPopup(r, 8, "both", ns.hui.layer.L1)
@@ -551,10 +629,12 @@ local function MakeRow(i)
     r.xt:SetText("×")
     r.xt:SetTextColor(FAINT[1], FAINT[2], FAINT[3])
     r.btn:SetScript("OnEnter", function()
+        HoverOn()
         r.xt:SetTextColor(0.89, 0.30, 0.29)
         Tip(r.btn, L["忽略此条"], L["以后不再提醒这一条"], L["可在管理忽略里恢复"])
     end)
     r.btn:SetScript("OnLeave", function()
+        HoverOff()
         r.xt:SetTextColor(FAINT[1], FAINT[2], FAINT[3])
         HideTip()
     end)
@@ -579,12 +659,13 @@ local function MakeRow(i)
         r.jump()
     end)
     r:SetScript("OnEnter", function()
+        HoverOn()
         if ns.hui and ns.hui.HuiCardState then ns.hui.HuiCardState(r, "hover") end
         r.name:SetTextColor(ACC[1], ACC[2], ACC[3])
         local sub = r.sub:GetText()
         if r.ikind == "turnin" then
             ItemTip(r, r.iid, r.ilabel, r.idesc or sub, L["点击在地图上定位上交 NPC"])
-        elseif r.ikind == "book" or r.ikind == "collect" or r.ikind == "rested" then
+        elseif r.ikind == "book" or r.ikind == "collect" or r.ikind == "rested" or r.ikind == "equip" then
             local desc = sub
             if r.idesc and r.idesc ~= "" then
                 desc = (sub ~= "" and (sub .. " · " .. r.idesc)) or r.idesc
@@ -595,14 +676,18 @@ local function MakeRow(i)
         elseif r.ikind == "talent" then
             Tip(r, r.ilabel, r.idesc or sub, r.jumpTip or L["点击打开天赋界面"])
         else
-            SpellTip(r, r.itipid or r.iid, r.ilabel, sub)
+            SpellTip(r, r.itipid or r.iid, r.ilabel, r.subBase or sub, r.discTip)
         end
     end)
     r:SetScript("OnLeave", function()
+        HoverOff()
         if ns.hui and ns.hui.HuiCardState then ns.hui.HuiCardState(r, "norm") end
         r.name:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
         HideTip()
     end)
+    if not InCombatLockdown() then
+        TalentClick(r)
+    end
     subRows[i] = r
     return r
 end
@@ -632,9 +717,10 @@ local function ActBtn(host, key)
         end
     end)
     btn:SetScript("OnEnter", function(self)
+        HoverOn()
         if self.tipText then Tip(self, self.tipText, nil) end
     end)
-    btn:SetScript("OnLeave", function() HideTip() end)
+    btn:SetScript("OnLeave", function() HoverOff() HideTip() end)
     btn:HookScript("OnClick", function(self, mouse, down)
         if down then return end
         if mouse == "RightButton" and self.onRight then self.onRight() end
@@ -828,6 +914,7 @@ function O.FoodMenu()
 end
 
 local function Layout(res)
+    if InCombat() then return end
     local list = (res and res.items) or {}
     local n = #list
     local ci, hi, ri = 0, 0, 0
@@ -902,8 +989,8 @@ local function Layout(res)
                 local s = subs[k]
                 ri = ri + 1
                 local r = MakeRow(ri)
-                if s.disc then
-                    r.icon:SetTexture(s.disc)
+                if s.discTex then
+                    r.icon:SetTexture(s.discTex)
                     r.icon:SetTexCoord(0, 1, 0, 1)
                     local dc = s.discCol
                     if dc then
@@ -935,7 +1022,16 @@ local function Layout(res)
                 r.sub:SetPoint("TOPLEFT", r, "TOPLEFT", textLeft, -26)
                 r.sub:SetWidth(textW)
                 r.name:SetText(s.name or "")
-                r.sub:SetText(s.sub or SubText(s))
+                local subBase = s.sub or SubText(s)
+                if s.disc then
+                    r.sub:SetText(subBase .. " · " .. s.disc)
+                    local wide = (r.sub:GetStringWidth() or 0) > (textW + 2)
+                    r.sub:SetText(wide and (subBase .. "\n" .. s.disc) or (subBase .. " · " .. s.disc))
+                else
+                    r.sub:SetText(subBase)
+                end
+                r.subBase = subBase
+                r.discTip = s.discTip
                 local subH = r.sub:GetStringHeight() or 16
                 local rowHi = rowH
                 if 26 + subH + 4 > rowHi then rowHi = 26 + subH + 4 end
@@ -1015,6 +1111,14 @@ local function Layout(res)
                 r.idesc = s.desc
                 r.ilabel = s.name
                 r.jumpTip = s.jumpTip
+                if not r.talentClick then TalentClick(r) end
+                if r.talentClick then
+                    local yes = (r.ikind == "talent") and _G.TalentMicroButton ~= nil
+                    if not InCombatLockdown() then
+                        r.talentClick:SetShown(yes)
+                        r.talentClick:EnableMouse(yes)
+                    end
+                end
                 if s.jump then
                     r.jump = s.jump
                 elseif s.areaID or s.qid or (s.mapID and s.x and s.y) then
@@ -1219,7 +1323,7 @@ end
 
 local function Open(keep)
     if not panel or panel:IsShown() then return end
-    if InCombatLockdown and InCombatLockdown() then return end
+    if InCombat() then return end
     if opts then opts:Hide() end
     do
         local MWm = ns.MapWindowModule
@@ -1227,7 +1331,9 @@ local function Open(keep)
     end
     Layout(current)
     panel:SetAlpha(0)
+    if panel.hoverCatch then panel.hoverCatch:EnableMouse(true) end
     local function apply(e)
+        if InCombat() then return end
         panel:ClearAllPoints()
         panel:SetPoint("LEFT", orb, "RIGHT", 8 - SLIDE * (1 - e), 0)
         panel:SetAlpha(e)
@@ -1262,7 +1368,29 @@ local function Toggle()
     end
 end
 
+local pendShow = {}
+
+local function WantShow(f, want)
+    if not f then return end
+    if want then
+        if f:IsShown() then
+            pendShow[f] = nil
+            return
+        end
+        if InCombat() then
+            pendShow[f] = true
+            return
+        end
+        pendShow[f] = nil
+        f:Show()
+        return
+    end
+    pendShow[f] = nil
+    if f:IsShown() then f:Hide() end
+end
+
 local function Pulse()
+    if InCombat() then return end
     if not badge or not badge:IsShown() then return end
     pulseT = 0
     if pulseFrame then pulseFrame:Show() end
@@ -1291,8 +1419,7 @@ function O.Update(res)
     local wantOrb = onc.on ~= false
     if orb then
         local ghost = wantOrb and (onc.onlyTodo and not settingsOpen) and n == 0
-        if wantOrb and not orb:IsShown() then orb:Show() end
-        if not wantOrb and orb:IsShown() then orb:Hide() end
+        WantShow(orb, wantOrb)
         if ghost then
             if orb:IsMouseOver() or (panel and panel:IsShown()) then
                 if orb:GetAlpha() ~= 1 then orb:SetAlpha(1) end
@@ -1308,11 +1435,11 @@ function O.Update(res)
     PaintRing(n)
     if n > 0 then
         if badgeText then badgeText:SetText(n > 9 and "9+" or tostring(n)) end
-        badge:Show()
+        WantShow(badge, true)
         if lastN ~= n then Pulse() end
         lastN = n
     else
-        badge:Hide()
+        WantShow(badge, false)
         lastN = 0
     end
     local sawFood, sawRested = false, false
@@ -1450,6 +1577,12 @@ function O.Init()
             tweener:Hide()
             return
         end
+        if O.InCombat() then
+            job = nil
+            tweener:Hide()
+            Close()
+            return
+        end
         job.t = job.t + dt
         local k = job.t / job.dur
         if k > 1 then k = 1 end
@@ -1469,11 +1602,36 @@ function O.Init()
     panel:SetFrameStrata("MEDIUM")
     panel:SetFrameLevel(400)
     panel:SetClampedToScreen(true)
-    panel:EnableMouse(true)
+    panel:EnableMouse(false)
+    panel.escProxy = CreateFrame("Frame", "DFZoneOrbEscProxy", UIParent)
+    panel.escProxy:Hide()
+    panel.escProxy:SetScript("OnHide", function()
+        if panel and panel:IsShown() then Close() end
+    end)
+    panel:HookScript("OnShow", function()
+        if panel.escProxy and not panel.escProxy:IsShown() then panel.escProxy:Show() end
+    end)
+    panel:HookScript("OnHide", function()
+        if panel.escProxy and panel.escProxy:IsShown() then panel.escProxy:Hide() end
+        if opts and opts:IsShown() then opts:Hide() end
+    end)
     panel:Hide()
     if ns.hui and ns.hui.SkinPopup and ns.hui.layer then
         ns.hui.SkinPopup(panel, 10, "both", ns.hui.layer.L0)
     end
+
+    panel.hoverCatch = CreateFrame("Frame", nil, panel)
+    panel.hoverCatch:SetAllPoints(panel)
+    panel.hoverCatch:SetFrameLevel(panel:GetFrameLevel() + 1)
+    panel.hoverCatch:EnableMouse(true)
+    panel.hoverCatch:SetScript("OnEnter", function()
+        hovered = true
+        hideToken = hideToken + 1
+    end)
+    panel.hoverCatch:SetScript("OnLeave", function()
+        hovered = false
+        StartHideTimer()
+    end)
 
     panel.title = panel:CreateFontString(nil, "OVERLAY")
     panel.title:SetFont(ns.FONT, 16, "")
@@ -1594,9 +1752,10 @@ function O.Init()
     gt:SetVertexColor(GLYPH, GLYPH, GLYPH, 1)
 
     InitVoiceBtn()
-    opts = CreateFrame("Frame", nil, panel, "BackdropTemplate")
-    opts:SetSize(184, 444)
+    opts = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    opts:SetSize(620, 330)
     opts:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -40)
+    opts:SetFrameStrata("DIALOG")
     opts:SetFrameLevel(panel:GetFrameLevel() + 8)
     if ns.hui and ns.hui.SkinPopup and ns.hui.layer then
         ns.hui.SkinPopup(opts, 8, "both", ns.hui.layer.L2)
@@ -1613,6 +1772,29 @@ function O.Init()
     end)
     opts:Hide()
 
+    local OPTS_MARGIN = 8
+    local function PlaceOpts()
+        local sw = (UIParent.GetWidth and UIParent:GetWidth()) or 1920
+        local sh = (UIParent.GetHeight and UIParent:GetHeight()) or 1080
+        local pr = (panel.GetRight and panel:GetRight()) or sw
+        local pl = (panel.GetLeft and panel:GetLeft()) or 0
+        local pt = (panel.GetTop and panel:GetTop()) or sh
+        local w = opts:GetWidth() or 620
+        local h = opts:GetHeight() or 330
+        local ty = pt - 46
+        if ty < h + OPTS_MARGIN then ty = h + OPTS_MARGIN end
+        if ty > sh - OPTS_MARGIN then ty = sh - OPTS_MARGIN end
+        opts:ClearAllPoints()
+        local right = pr - 8
+        if right - w >= OPTS_MARGIN then
+            opts:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", right, ty)
+        else
+            local left = pl + 8
+            if left + w > sw - OPTS_MARGIN then left = math.max(OPTS_MARGIN, sw - OPTS_MARGIN - w) end
+            opts:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, ty)
+        end
+    end
+
     local oph = opts:CreateFontString(nil, "OVERLAY")
     oph:SetFont(ns.FONT, 14, "")
     oph:SetPoint("TOPLEFT", opts, "TOPLEFT", 10, -8)
@@ -1621,16 +1803,35 @@ function O.Init()
 
     optCbs = {}
 
-    local function OptRow(y, label, key, tip, vkey)
+    local COL_STEP = 152
+    local colRow = { 0, 0, 0, 0 }
+    local function ColX(col) return 10 + (col - 1) * COL_STEP end
+    local function ColNext(col)
+        local y = -34 - colRow[col] * 22
+        colRow[col] = colRow[col] + 1
+        return y
+    end
+    local function ColHead(col, text)
+        local y = ColNext(col)
+        local h = opts:CreateFontString(nil, "OVERLAY")
+        h:SetFont(ns.FONT, 14, "")
+        h:SetPoint("TOPLEFT", opts, "TOPLEFT", ColX(col), y - 4)
+        h:SetText(text)
+        h:SetTextColor(FAINT[1], FAINT[2], FAINT[3])
+    end
+
+    local function OptRow(col, label, key, tip, vkey)
+        local y = ColNext(col)
+        local bx = ColX(col)
         local t = opts:CreateFontString(nil, "OVERLAY")
         t:SetFont(ns.FONT, 14, "")
-        t:SetPoint("TOPLEFT", opts, "TOPLEFT", 10, y - 4)
+        t:SetPoint("TOPLEFT", opts, "TOPLEFT", bx, y - 4)
         t:SetText(label)
         t:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
         if vkey then
             local vb = CreateFrame("Button", nil, opts)
             vb:SetSize(28, 22)
-            vb:SetPoint("TOPRIGHT", opts, "TOPRIGHT", -56, y + 1)
+            vb:SetPoint("TOPRIGHT", opts, "TOPLEFT", bx + 81, y + 1)
             vb.tex = vb:CreateTexture(nil, "ARTWORK")
             vb.tex:SetSize(21, 21)
             vb.tex:SetPoint("CENTER", vb, "CENTER", 0, 0)
@@ -1669,7 +1870,7 @@ function O.Init()
         end
         local cb = CreateFrame("CheckButton", nil, opts)
         cb:SetSize(36, 20)
-        cb:SetPoint("TOPRIGHT", opts, "TOPRIGHT", -8, y + 1)
+        cb:SetPoint("TOPRIGHT", opts, "TOPLEFT", bx + 132, y + 1)
         if ns.hui and ns.hui.ReskinToggle then ns.hui.ReskinToggle(cb) end
         cb:SetScript("OnClick", function(self)
             ns.PlaySound(1)
@@ -1695,30 +1896,43 @@ function O.Init()
         return cb
     end
 
-    OptRow(-32, L["探索-书籍提醒"], "book", L["本图还有未收集的书时提示"])
-    OptRow(-54, L["探索-书籍上交提醒"], "turnin", L["在幽暗城且背包有可上交的书时提示"])
-    OptRow(-76, L["探索-睡袋提醒"], "bag", L["本图有睡袋任务链的一步时提示"])
-    OptRow(-98, L["探索-火炬提醒"], "torch", L["本图有守夜人火炬可拾取时提示"])
-    OptRow(-120, L["探索-旗帜提醒"], "banner", L["进入血色修道院副本后，有未拾取的血色旗帜时提示"])
-    OptRow(-142, L["副本-任务提醒"], "quest", L["本图有可接的副本任务时提示"])
-    OptRow(-164, L["职业-技能提醒"], "spell", L["主城有训练师且技能可学时提示"])
-    OptRow(-186, L["职业-天赋提醒"], "talent", L["有未分配的天赋点时提示，点击可直接打开天赋界面"])
-    OptRow(-208, L["增益-食物提醒"], "food", L["没吃食物、缺少经验加成时提示"], "foodVoice")
-    OptRow(-230, L["增益-睡袋提醒"], "rested", L["背包有睡袋且未休息或 buff 快到期时提示"], "restedVoice")
-    OptRow(-252, L["增益-露营提醒"], "camp", L["在营火旁且没有强化休息时提示"])
-    OptRow(-274, L["增益-到期提醒"], "renew", L["强化休息快到期时提示回营地续一次"])
-    OptRow(-296, L["增益-蹭帐篷卡片"], "tent", L["找到营地玩家且自己还没有强化休息时，在待办里弹出卡片"])
-    OptRow(-318, L["有帐篷时不提示"], "tentOwn", L["自己已有帐篷时，不再在待办里弹出蹭帐篷卡片"])
+    ColHead(1, L["探索"])
+    OptRow(1, L["书籍提醒"], "book", L["本图还有未收集的书时提示"])
+    OptRow(1, L["书籍上交提醒"], "turnin", L["在幽暗城且背包有可上交的书时提示"])
+    OptRow(1, L["睡袋提醒"], "bag", L["本图有睡袋任务链的一步时提示"])
+    OptRow(1, L["火炬提醒"], "torch", L["本图有守夜人火炬可拾取时提示"])
+    OptRow(1, L["旗帜提醒"], "banner", L["进入血色修道院副本后，有未拾取的血色旗帜时提示"])
+    ColHead(1, L["职业"])
+    OptRow(1, L["技能提醒"], "spell", L["主城有训练师且技能可学时提示"])
+    OptRow(1, L["天赋提醒"], "talent", L["有未分配的天赋点时提示，点击可直接打开天赋界面"])
+    ColHead(1, L["专业"])
+    OptRow(1, L["冷却可做提醒"], "profcd", L["本账号任意角色的冷却配方可再做时，在待办里提示"])
 
+    ColHead(2, L["副本"])
+    OptRow(2, L["必备物品提醒"], "keyitem", L["在副本里且背包没有该副本要用的物品时提示"])
+    ColHead(2, L["副本任务"])
+    OptRow(2, L["未接任务提醒"], "quest", L["本图有可接的副本任务时提示"])
+    OptRow(2, L["已接任务提醒"], "questTaken", L["已接取、进行中的副本任务需要操作时提示"])
+
+    ColHead(3, L["增益"])
+    OptRow(3, L["食物提醒"], "food", L["没吃食物、缺少经验加成时提示"], "foodVoice")
+    OptRow(3, L["睡袋提醒"], "rested", L["背包有睡袋且未休息或 buff 快到期时提示"], "restedVoice")
+    OptRow(3, L["露营提醒"], "camp", L["在营火旁且没有强化休息时提示"])
+    OptRow(3, L["到期提醒"], "renew", L["强化休息快到期时提示回营地续一次"])
+    OptRow(3, L["蹭帐篷卡片"], "tent", L["找到营地玩家且自己还没有强化休息时，在待办里弹出卡片"])
+    OptRow(3, L["有帐篷时不提示"], "tentOwn", L["自己已有帐篷时，不再在待办里弹出蹭帐篷卡片"])
+
+    local ttY = ColNext(3)
+    local ttBX = ColX(3)
     local ttLabel = opts:CreateFontString(nil, "OVERLAY")
     ttLabel:SetFont(ns.FONT, 14, "")
-    ttLabel:SetPoint("TOPLEFT", opts, "TOPLEFT", 10, -344)
+    ttLabel:SetPoint("TOPLEFT", opts, "TOPLEFT", ttBX, ttY - 4)
     ttLabel:SetText(L["蹭帐篷密语"])
     ttLabel:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
 
     local ttBtn = CreateFrame("Button", nil, opts, "BackdropTemplate")
     ttBtn:SetSize(56, 20)
-    ttBtn:SetPoint("TOPRIGHT", opts, "TOPRIGHT", -8, -341)
+    ttBtn:SetPoint("TOPRIGHT", opts, "TOPLEFT", ttBX + 132, ttY + 1)
     if ns.hui and ns.hui.BuildRoundedBG and ns.hui.layer then
         ns.hui.BuildRoundedBG(ttBtn, 6, ns.hui.layer.L2, "both", true, 1)
     end
@@ -1773,25 +1987,23 @@ function O.Init()
     ttBtn:SetScript("OnLeave", HideTip)
     SyncTentText()
 
-    local oph2 = opts:CreateFontString(nil, "OVERLAY")
-    oph2:SetFont(ns.FONT, 14, "")
-    oph2:SetPoint("TOPLEFT", opts, "TOPLEFT", 10, -368)
-    oph2:SetText(L["窗口设置"])
-    oph2:SetTextColor(FAINT[1], FAINT[2], FAINT[3])
-
-    OptRow(-388, L["仅有待办时显示"], "onlyTodo", L["没有待办时隐藏圆形按钮"])
+    ColHead(4, L["窗口"])
+    OptRow(4, L["仅有待办时显示"], "onlyTodo", L["没有待办时隐藏圆形按钮"])
+    OptRow(4, L["进新场景不弹窗"], "noZonePopup", L["进入新的场景时不再自动弹出待办窗口，可点击圆球查看"])
 
     local SIZES = { 24, 28, 32, 36, 40 }
 
+    local szY = ColNext(4)
+    local szBX = ColX(4)
     local szLabel = opts:CreateFontString(nil, "OVERLAY")
     szLabel:SetFont(ns.FONT, 14, "")
-    szLabel:SetPoint("TOPLEFT", opts, "TOPLEFT", 10, -416)
+    szLabel:SetPoint("TOPLEFT", opts, "TOPLEFT", szBX, szY - 4)
     szLabel:SetText(L["待办图标大小"])
     szLabel:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
 
     local szBtn = CreateFrame("Button", nil, opts, "BackdropTemplate")
     szBtn:SetSize(36, 20)
-    szBtn:SetPoint("TOPRIGHT", opts, "TOPRIGHT", -8, -411)
+    szBtn:SetPoint("TOPRIGHT", opts, "TOPLEFT", szBX + 132, szY + 1)
     if ns.hui and ns.hui.BuildRoundedBG and ns.hui.layer then
         ns.hui.BuildRoundedBG(szBtn, 6, ns.hui.layer.L2, "both", true, 1)
     end
@@ -1841,10 +2053,7 @@ function O.Init()
             end
             SyncSize()
             SyncTentText()
-            local rx = (panel.GetRight and panel:GetRight() or 0) - 8
-            local ty = (panel.GetTop and panel:GetTop() or 0) - 40
-            opts:ClearAllPoints()
-            opts:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", rx, ty)
+            PlaceOpts()
             opts:Show()
         end
     end)
@@ -1929,7 +2138,7 @@ function O.Init()
     end)
     local function SyncMenuLabels()
         local c = ns.ZoneHint and ns.ZoneHint.CFG and ns.ZoneHint.CFG() or {}
-        oml1:SetText(L["仅有待办时显示"] .. "：" .. ((c.onlyTodo and L["开"]) or L["关"]))
+        oml1:SetText(L["仅有待办时显示"] .. L["："] .. ((c.onlyTodo and L["开"]) or L["关"]))
     end
     omb1:SetScript("OnClick", function()
         ns.PlaySound(1)
@@ -1959,6 +2168,7 @@ function O.Init()
             orbMenu:Hide()
             return
         end
+        if O.InCombat() then return end
         SyncMenuLabels()
         local w = math.max(TextW(oml1, 60), TextW(oml2, 60)) + 24
         if w < 120 then w = 120 end
@@ -2020,6 +2230,7 @@ function O.Init()
     orb:SetScript("OnDragStop", function()
         orb:StopMovingOrSizing()
         SavePos()
+        if O.InCombat() then return end
         if panel and panel:IsShown() then
             panel:ClearAllPoints()
             panel:SetPoint("LEFT", orb, "RIGHT", 8, 0)
@@ -2056,11 +2267,11 @@ function O.Init()
     end)
 
     if UISpecialFrames then
-        local found = false
-        for i = 1, #UISpecialFrames do
-            if UISpecialFrames[i] == "DFZoneOrbPanel" then found = true break end
+        for i = #UISpecialFrames, 1, -1 do
+            local n = UISpecialFrames[i]
+            if n == "DFZoneOrbPanel" or n == "DFZoneOrbEscProxy" then table.remove(UISpecialFrames, i) end
         end
-        if not found then table.insert(UISpecialFrames, "DFZoneOrbPanel") end
+        table.insert(UISpecialFrames, "DFZoneOrbEscProxy")
     end
     panel:HookScript("OnHide", function()
         if FoodMenuClose then FoodMenuClose() end
@@ -2069,6 +2280,7 @@ function O.Init()
 
     if panel.title then panel.title:SetText("") end
     cards, heads, subRows = {}, {}, {}
+    panel:EnableMouse(false)
 end
 
 function O.Refresh()
@@ -2120,6 +2332,11 @@ end
 
 function O.CbPreviewToggle()
     if not orb then return end
+    if cbPanel and cbPanel:IsShown() then
+        cbPanel:Hide()
+        return
+    end
+    if InCombat() and not cbPanel then return end
     if not cbPanel then
         local f = CreateFrame("Frame", nil, orb, "BackdropTemplate")
         f:SetWidth(248)
@@ -2166,7 +2383,7 @@ function O.CbPreviewToggle()
     if body == "" then body = L["本图暂无待办"] end
     cbPanel.body:SetText(body)
     local lines = select(2, body:gsub("\n", "")) + 1
-    cbPanel:SetHeight(46 + lines * 17)
+    if not InCombat() then cbPanel:SetHeight(46 + lines * 17) end
     cbPanel:Show()
 end
 
@@ -2178,16 +2395,14 @@ regenWatch:SetScript("OnEvent", function(_, event)
         if cbPanel and cbPanel:IsShown() then cbPanel:Hide() end
         if orbMenu and orbMenu:IsShown() then orbMenu:Hide() end
         if FoodMenuClose then FoodMenuClose() end
-        if panel and panel:IsShown() then
-            if InCombatLockdown and InCombatLockdown() then
-                closePending = true
-            else
-                hideToken = hideToken + 1
-                panel:SetAlpha(1)
-                panel:Hide()
-            end
-        end
+        if panel and panel:IsShown() then CombatHide() end
         return
+    end
+    if orb and orb:GetNumPoints() == 0 then ApplyPos() end
+    if orbSizeDirty then ApplyOrbSize() end
+    for f in pairs(pendShow) do
+        pendShow[f] = nil
+        if not f:IsShown() then f:Show() end
     end
     if cbPanel and cbPanel:IsShown() then cbPanel:Hide() end
     if closePending then

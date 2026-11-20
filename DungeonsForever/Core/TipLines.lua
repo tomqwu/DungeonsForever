@@ -5,6 +5,12 @@ local L = ns.L
 local TL = {}
 ns.TipLines = TL
 
+local function IsSecret(v)
+    if type(issecretvalue) ~= "function" then return false end
+    local ok, s = pcall(issecretvalue, v)
+    return (ok and s) and true or false
+end
+
 local C_SRC = { 1, 0.82, 0 }
 local C_WISH = { 1, 0.82, 0.4 }
 local C_BIS = { 0.47, 0.75, 0.45 }
@@ -16,10 +22,11 @@ local LOGO = "|TInterface\\AddOns\\DungeonsForever\\Media\\Brand\\DungeonsForeve
 local LOGO_GAP = "|TInterface\\AddOns\\DungeonsForever\\Media\\Brand\\DF_Blank.tga:16:16:0:0:32:32:0:32:0:32|t "
 
 local TIP_VER = 1
-local TIP_KEYS = { "src", "bis", "bisScore", "wish", "quest", "ilvl", "need", "price", "matPrice" }
+local TIP_KEYS = { "src", "bis", "bisScore", "wish", "quest", "ilvl", "need", "price", "matPrice", "prodPrice", "prodOwnOnly", "vendorRec" }
 local TIP_DEF = {
     src = true, bis = false, bisScore = true, wish = false,
     quest = false, ilvl = true, need = true, price = true, matPrice = true,
+    prodPrice = false, prodOwnOnly = true, vendorRec = true,
 }
 
 local function Cfg()
@@ -42,6 +49,10 @@ local function Cfg()
     t.writNeed = nil
     for _, k in ipairs(TIP_KEYS) do
         if t[k] == nil then t[k] = TIP_DEF[k] end
+    end
+    if t.prodPriceDefault ~= 2 then
+        t.prodPriceDefault = 2
+        t.prodPrice = false
     end
     if t.global == nil then t.global = true end
     return t
@@ -260,6 +271,16 @@ local function BisHit(id)
 end
 
 local C_SC_HEAD = { 0.66, 0.68, 0.74 }
+local SC_UP = "|cff78d973"
+local SC_DN = "|cffeb6b61"
+local SC_TAG = "|cffa8adbd"
+
+local function PctSeg(nm, p)
+    if p > 999 then p = 999 elseif p < -999 then p = -999 end
+    local txt = format("%s%+d%%|r", p > 0 and SC_UP or SC_DN, p)
+    if type(nm) == "string" and nm ~= "" then return SC_TAG .. nm .. "|r " .. txt end
+    return txt
+end
 
 local function ScoreRows(id, link)
     local BG = ns.BisModule
@@ -278,12 +299,21 @@ local function ScoreRows(id, link)
     if #rows == 1 then
         local one = rows[1]
         if one.p == 0 then return nil end
+        if type(one.r.p2) == "number" then
+            return { { format("%s  %s · %s", L["BIS 评分"], PctSeg(one.r.b1, one.r.p1), PctSeg(one.r.b2, one.r.p2)),
+                      C_SC_HEAD, true } }
+        end
         return { { format(L["BIS 评分 %+d%%"], one.p), one.p > 0 and C_SC_UP or C_SC_DOWN, true } }
     end
     local out = { { L["BIS 评分"], C_SC_HEAD, true } }
     for _, e in ipairs(rows) do
-        out[#out + 1] = { format("%s %+d%%", tostring(e.r.label or ""), e.p),
-                          e.p > 0 and C_SC_UP or C_SC_DOWN, false }
+        local txt
+        if type(e.r.p2) == "number" then
+            txt = format("%s  %s · %s", tostring(e.r.label or ""), PctSeg(e.r.b1, e.r.p1), PctSeg(e.r.b2, e.r.p2))
+        else
+            txt = format("%s %+d%%", tostring(e.r.label or ""), e.p)
+        end
+        out[#out + 1] = { txt, e.p > 0 and C_SC_UP or C_SC_DOWN, false }
     end
     return out
 end
@@ -304,10 +334,31 @@ local function PriceRows(id)
     return rows
 end
 
+local C_VENDOR_REC = { 1, 0.82, 0 }
+
+local function VendorRecRows(id)
+    local RA = ns.ProfRouteAuto
+    if not RA or not RA.AHPriceOf or not RA.NPCSellPriceOf then return nil end
+    local ah = RA.AHPriceOf(id)
+    local sell = RA.NPCSellPriceOf(id)
+    if type(ah) ~= "number" or type(sell) ~= "number" then return nil end
+    if ah <= 0 or sell <= 0 then return nil end
+    local net = math.floor(ah * 0.95) - math.floor(sell * 0.05)
+    if net > sell then return nil end
+    return { { ">>" .. L["推荐直接卖商人"] .. "<<", C_VENDOR_REC[1], C_VENDOR_REC[2], C_VENDOR_REC[3] } }
+end
+
 local function PatternRows(id, title)
     local PM = ns.ProfModule
     if not PM or not PM.PatternTipLines then return nil end
     return PM.PatternTipLines(id, title)
+end
+
+local function ProductRows(id, title)
+    local PM = ns.ProfModule
+    if not PM or not PM.ProductTipLines then return nil end
+    if Cfg().prodOwnOnly and PM.ProfKnows and not PM.ProfKnows(id) then return nil end
+    return PM.ProductTipLines(id, title)
 end
 
 local function WritNeedRows(id, title)
@@ -322,10 +373,102 @@ local function CrateNeedRows(id, title)
     return PM.CrateNeedLines(id, title)
 end
 
+local dmTierIdx
+
+local function DarkmoonTiers()
+    if dmTierIdx then return dmTierIdx end
+    local DM = ns.Darkmoon
+    if type(DM) ~= "table" or type(DM.LINES) ~= "table" then return nil end
+    local idx = {}
+    for _, ln in ipairs(DM.LINES) do
+        if type(ln) == "table" then
+            local mats = ln.mats
+            if type(mats) == "table" then
+                for t = 1, #mats do
+                    local mid = mats[t]
+                    if type(mid) == "number" and idx[mid] == nil then idx[mid] = t end
+                end
+            end
+            local alt = ln.alt
+            if type(alt) == "table" and type(alt.id) == "number" and type(alt.t) == "number" and idx[alt.id] == nil then
+                idx[alt.id] = alt.t
+            end
+        end
+    end
+    dmTierIdx = idx
+    return idx
+end
+
+local function DarkmoonNeedRows(id)
+    local idx = DarkmoonTiers()
+    local tier = idx and idx[id]
+    if not tier then return nil end
+    return { { L["需求"] .. ": " .. L["暗月马戏团"] .. " | " .. format(L["档次 %d"], tier), 1, 0.82, 0.4 } }
+end
+TL.DarkmoonNeedRows = DarkmoonNeedRows
+
+local USE_TEXT = {
+    [276561] = L["阿鲁高书桌上拾取；在银松森林 63.4, 64.3 安波米尔室内最内侧蓝色水晶旁使用，获得召唤达拉然隐藏 BOSS 道具书"],
+    [275989] = L["达拉然隐藏 BOSS 激活物品"],
+}
+
+local function UseRows(id)
+    local txt = USE_TEXT[id]
+    if not txt then return nil end
+    return { { txt, 1, 0.82, 0.4 } }
+end
+TL.UseRows = UseRows
+
+local bookIdx
+local function BookIdx()
+    if bookIdx then return bookIdx end
+    local books = ns.ExploreBooks
+    if type(books) ~= "table" then return nil end
+    bookIdx = {}
+    for _, rec in pairs(books) do
+        local iid = type(rec) == "table" and rec[1] or nil
+        if type(iid) == "number" then bookIdx[iid] = rec end
+    end
+    return bookIdx
+end
+
+local function BookSpot()
+    local TI = ns.ExploreTurnIn
+    if type(TI) ~= "table" then return nil end
+    local side = type(UnitFactionGroup) == "function" and UnitFactionGroup("player") or nil
+    if type(side) == "string" and not IsSecret(side) then side = side:sub(1, 1) else side = nil end
+    local pick
+    for i = 1, #TI do
+        local o = TI[i]
+        if type(o) == "table" and type(o.x) == "number" and type(o.y) == "number" then
+            if side and o.side == side then return o end
+            if not pick then pick = o end
+        end
+    end
+    return pick
+end
+
+local function BookNeedRows(id)
+    local idx = BookIdx()
+    if not (idx and idx[id]) then return nil end
+    local spot = BookSpot()
+    if not spot then return nil end
+    local where = tostring(spot.place or "")
+    if where ~= "" then where = where .. " " end
+    return { { format(L["探索书籍 · 交给「%s」（%s%.1f, %.1f）"],
+        tostring(spot.npc or "?"), where, spot.x, spot.y), 1, 0.82, 0.4 } }
+end
+TL.BookNeedRows = BookNeedRows
+
 local function ExtraRows(id, title)
     local cfg = Cfg()
     local out
     if cfg.need then
+        local brows = BookNeedRows(id)
+        if brows then
+            out = out or {}
+            for i = 1, #brows do out[#out + 1] = brows[i] end
+        end
         local rows = CrateNeedRows(id, title)
         if rows then
             out = out or {}
@@ -335,6 +478,16 @@ local function ExtraRows(id, title)
         if wrows then
             out = out or {}
             for i = 1, #wrows do out[#out + 1] = wrows[i] end
+        end
+        local drows = DarkmoonNeedRows(id)
+        if drows then
+            out = out or {}
+            for i = 1, #drows do out[#out + 1] = drows[i] end
+        end
+        local urows = UseRows(id)
+        if urows then
+            out = out or {}
+            for i = 1, #urows do out[#out + 1] = urows[i] end
         end
     end
     if cfg.price then
@@ -346,6 +499,20 @@ local function ExtraRows(id, title)
     end
     if cfg.matPrice then
         local rows = PatternRows(id, title)
+        if rows then
+            out = out or {}
+            for i = 1, #rows do out[#out + 1] = rows[i] end
+        end
+    end
+    if cfg.prodPrice then
+        local prows = ProductRows(id, title)
+        if prows then
+            out = out or {}
+            for i = 1, #prows do out[#out + 1] = prows[i] end
+        end
+    end
+    if cfg.vendorRec then
+        local rows = VendorRecRows(id)
         if rows then
             out = out or {}
             for i = 1, #rows do out[#out + 1] = rows[i] end
@@ -387,7 +554,11 @@ function TL.Lines(id, link, title)
         else
             local cn = BuildCraft()
             local nm = cn and cn[id]
-            if nm then
+            local PM = ns.ProfModule
+            local ttl = PM and PM.ProductCraftTitle and PM.ProductCraftTitle(id) or nil
+            if ttl then
+                add(ttl, C_SRC)
+            elseif nm then
                 add(format(L["专业制造（%s）"], nm), C_SRC)
             end
         end
@@ -488,7 +659,7 @@ local augStamp = {}
 local function TipItemID(tt)
     if type(tt.GetItem) ~= "function" then return nil end
     local ok, _, link = pcall(tt.GetItem, tt)
-    if ok and type(link) == "string" then return tonumber(link:match("item:(%d+)")), link end
+    if ok and type(link) == "string" and not IsSecret(link) then return tonumber(link:match("item:(%d+)")), link end
     return nil
 end
 
@@ -496,7 +667,7 @@ local function PlainWidth(fs)
     if not fs or not fs.GetWidth then return nil end
     local ok, w = pcall(fs.GetWidth, fs)
     if not ok or w == nil then return nil end
-    if issecretvalue and issecretvalue(w) then return nil end
+    if IsSecret(w) then return nil end
     if type(w) ~= "number" or w <= 0 then return nil end
     return w
 end
@@ -507,7 +678,7 @@ local function TipTitle(tt)
     local fs = _G[nm .. "TextLeft1"]
     if not (fs and fs.GetText) then return nil end
     local ok, s = pcall(fs.GetText, fs)
-    if ok and type(s) == "string" and s ~= "" then return s end
+    if ok and type(s) == "string" and not IsSecret(s) and s ~= "" then return s end
     return nil
 end
 
@@ -522,11 +693,11 @@ local function Augment(tt, data)
     if not cfg.global then return end
     local id, link = TipItemID(tt)
     if not id and type(data) == "table" then
-        if type(data.hyperlink) == "string" then
+        if type(data.hyperlink) == "string" and not IsSecret(data.hyperlink) then
             id = tonumber(data.hyperlink:match("item:(%d+)"))
             link = data.hyperlink
         end
-        if not id and type(data.id) == "number" then id = data.id end
+        if not id and type(data.id) == "number" and not IsSecret(data.id) then id = data.id end
     end
     if not id then return end
     if augStamp[tt] == id then
@@ -861,7 +1032,7 @@ function TL.EnsurePreview(card)
         local link
         if type(self.GetItem) == "function" then
             local ok2, _, l = pcall(self.GetItem, self)
-            if ok2 and type(l) == "string" then
+            if ok2 and type(l) == "string" and not IsSecret(l) then
                 link = l
                 if not id then id = tonumber(l:match("item:(%d+)")) end
             end

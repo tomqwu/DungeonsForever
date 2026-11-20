@@ -1,4 +1,4 @@
-local gl = (type(GetLocale) == 'function') and GetLocale() or 'zhCN'
+local gl = (type(DF_Locale) == 'function') and DF_Locale() or 'zhCN'
 if gl ~= 'enUS' then return end
 
 local ns = _G.DF_NS or {}
@@ -6,10 +6,10 @@ local ns = _G.DF_NS or {}
 if not ns.IsTitan then return end
 
 ns.SpellBookData = {
-    version = "2026-11-04",
+    version = "2026-11-13",
     classes = {
     DRUID = {
-        total = 60,
+        total = 59,
         tabs = {
         {
             name = "Balance",
@@ -195,12 +195,13 @@ ns.SpellBookData = {
                 { rank = 3, learn = 52, id = 9892 },
                 } },
                 { name = "Travel Form", icon = "Interface\\Icons\\Ability_Druid_Travelform", id = 783, learnLv = 30 },
-                { name = "Ferocious Bite", icon = "Interface\\Icons\\Ability_Druid_Ferociousbite", id = 31018, learnLv = 32, ranks = {
-                { rank = 1, learn = 32, id = 22568 },
-                { rank = 2, learn = 40, id = 22827 },
-                { rank = 3, learn = 48, id = 22828 },
-                { rank = 4, learn = 56, id = 22829 },
-                { rank = 5, learn = 60, id = 31018 },
+                { name = "Ferocious Bite", icon = "Interface\\Icons\\Ability_Druid_Ferociousbite", id = 31018, learnLv = 24, ranks = {
+                { rank = 1, learn = 24, id = 1328618 },
+                { rank = 2, learn = 32, id = 22568 },
+                { rank = 3, learn = 40, id = 22827 },
+                { rank = 4, learn = 48, id = 22828 },
+                { rank = 5, learn = 56, id = 22829 },
+                { rank = 6, learn = 60, id = 31018 },
                 } },
                 { name = "Ravage", icon = "Interface\\Icons\\Ability_Druid_Ravage", id = 9867, learnLv = 32, ranks = {
                 { rank = 1, learn = 32, id = 6785 },
@@ -223,7 +224,6 @@ ns.SpellBookData = {
                 } },
                 { name = "Feral Charge", icon = "Interface\\Icons\\Ability_Hunter_Pet_Bear", id = 1238122, isTalent = true },
                 { name = "Shifting Power", icon = "Interface\\Icons\\Spell_Druid_Displacement", id = 1322605, isTalent = true },
-                { name = "Berserk", icon = "Interface\\Icons\\Ability_Druid_Berserk", id = 417141, isTalent = true },
             },
         },
         {
@@ -542,7 +542,7 @@ ns.SpellBookData = {
         },
     },
     MAGE = {
-        total = 62,
+        total = 61,
         tabs = {
         {
             name = "Arcane",
@@ -629,9 +629,9 @@ ns.SpellBookData = {
                 { rank = 5, learn = 52, id = 10192 },
                 { rank = 6, learn = 60, id = 10193 },
                 } },
-                { name = "Teleport: Ironforge", icon = "Interface\\Icons\\Spell_Arcane_Teleportironforge", id = 3562, learnLv = 20, races = "侏儒/高阶会天裔/人类" },
+                { name = "Teleport: Ironforge", icon = "Interface\\Icons\\Spell_Arcane_Teleportironforge", id = 3562, learnLv = 20, races = "Gnome/High Order Skyborne/Human" },
                 { name = "Teleport: Orgrimmar", icon = "Interface\\Icons\\Spell_Arcane_Teleportorgrimmar", id = 3567, learnLv = 20, races = "Orc/Troll/Undead" },
-                { name = "Teleport: Stormwind", icon = "Interface\\Icons\\Spell_Arcane_Teleportstormwind", id = 3561, learnLv = 20, races = "侏儒/高阶会天裔/人类" },
+                { name = "Teleport: Stormwind", icon = "Interface\\Icons\\Spell_Arcane_Teleportstormwind", id = 3561, learnLv = 20, races = "Gnome/High Order Skyborne/Human" },
                 { name = "Teleport: Undercity", icon = "Interface\\Icons\\Spell_Arcane_Teleportundercity", id = 3563, learnLv = 20, races = "Orc/Troll/Undead" },
                 { name = "Counterspell", icon = "Interface\\Icons\\Spell_Frost_Iceshock", id = 2139, learnLv = 24 },
                 { name = "Arcane Wrath", icon = "Interface\\Icons\\Ability_Mage_Netherwindpresence", id = 1326082, learnLv = 25, isTalent = true, ranks = {
@@ -641,7 +641,7 @@ ns.SpellBookData = {
                 { rank = 4, learn = 60, id = 1326082 },
                 } },
                 { name = "Conjure Mana Agate", icon = "Interface\\Icons\\Inv_Misc_Gem_Emerald_01", id = 759, learnLv = 28 },
-                { name = "Teleport: Darnassus", icon = "Interface\\Icons\\Spell_Arcane_Teleportdarnassus", id = 3565, learnLv = 30, races = "侏儒/高阶会天裔/人类" },
+                { name = "Teleport: Darnassus", icon = "Interface\\Icons\\Spell_Arcane_Teleportdarnassus", id = 3565, learnLv = 30, races = "Gnome/High Order Skyborne/Human" },
                 { name = "Teleport: Thunder Bluff", icon = "Interface\\Icons\\Spell_Arcane_Teleportthunderbluff", id = 3566, learnLv = 30, races = "Orc/Troll/Undead" },
                 { name = "Mage Armor", icon = "Interface\\Icons\\Spell_Magearmor", id = 22783, learnLv = 34, ranks = {
                 { rank = 1, learn = 34, id = 6117 },
@@ -649,14 +649,14 @@ ns.SpellBookData = {
                 { rank = 3, learn = 58, id = 22783 },
                 } },
                 { name = "Conjure Mana Jade", icon = "Interface\\Icons\\Inv_Misc_Gem_Emerald_02", id = 3552, learnLv = 38 },
-                { name = "Portal: Ironforge", icon = "Interface\\Icons\\Spell_Arcane_Portalironforge", id = 11416, learnLv = 40, races = "侏儒/高阶会天裔/人类" },
+                { name = "Portal: Ironforge", icon = "Interface\\Icons\\Spell_Arcane_Portalironforge", id = 11416, learnLv = 40, races = "Gnome/High Order Skyborne/Human" },
                 { name = "Portal: Orgrimmar", icon = "Interface\\Icons\\Spell_Arcane_Portalorgrimmar", id = 11417, learnLv = 40, races = "Orc/Troll/Undead" },
-                { name = "Portal: Stormwind", icon = "Interface\\Icons\\Spell_Arcane_Portalstormwind", id = 10059, learnLv = 40, races = "侏儒/高阶会天裔/人类" },
+                { name = "Portal: Stormwind", icon = "Interface\\Icons\\Spell_Arcane_Portalstormwind", id = 10059, learnLv = 40, races = "Gnome/High Order Skyborne/Human" },
                 { name = "Portal: Undercity", icon = "Interface\\Icons\\Spell_Arcane_Portalundercity", id = 11418, learnLv = 40, races = "Orc/Troll/Undead" },
                 { name = "Conjure Mana Citrine", icon = "Interface\\Icons\\Inv_Misc_Gem_Opal_01", id = 10053, learnLv = 48 },
-                { name = "Portal: Darnassus", icon = "Interface\\Icons\\Spell_Arcane_Portaldarnassus", id = 11419, learnLv = 50, races = "侏儒/高阶会天裔/人类" },
+                { name = "Portal: Darnassus", icon = "Interface\\Icons\\Spell_Arcane_Portaldarnassus", id = 11419, learnLv = 50, races = "Gnome/High Order Skyborne/Human" },
                 { name = "Portal: Thunder Bluff", icon = "Interface\\Icons\\Spell_Arcane_Portalthunderbluff", id = 11420, learnLv = 50, races = "Orc/Troll/Undead" },
-                { name = "Teleport: Dalaran", icon = "Interface\\Icons\\Spell_Arcane_Teleporthalloftheguardian", id = 1297659, learnLv = 50, races = "侏儒/高阶会天裔/人类" },
+                { name = "Teleport: Dalaran", icon = "Interface\\Icons\\Spell_Arcane_Teleporthalloftheguardian", id = 1297659, learnLv = 50, races = "Gnome/High Order Skyborne/Human" },
                 { name = "Arcane Brilliance", icon = "Interface\\Icons\\Spell_Holy_Arcaneintellect", id = 23028, learnLv = 56 },
                 { name = "Conjure Mana Ruby", icon = "Interface\\Icons\\Inv_Misc_Gem_Ruby_01", id = 10054, learnLv = 58 },
                 { name = "Polymorph: Cow", icon = "Interface\\Icons\\Spell_Nature_Polymorph_Cow", id = 28270, learnLv = 60 },
@@ -792,11 +792,6 @@ ns.SpellBookData = {
                 { rank = 4, learn = 52, id = 10177 },
                 { rank = 5, learn = 60, id = 28609 },
                 } },
-                { name = "Frost Blast", icon = "Interface\\Icons\\Spell_Ice_Magicdamage", id = 1326055, learnLv = 24, ranks = {
-                { rank = 1, learn = 24, id = 1326053 },
-                { rank = 2, learn = 36, id = 1326054 },
-                { rank = 3, learn = 48, id = 1326055 },
-                } },
                 { name = "Cone of Cold", icon = "Interface\\Icons\\Spell_Frost_Glacier", id = 10161, learnLv = 26, ranks = {
                 { rank = 1, learn = 26, id = 120 },
                 { rank = 2, learn = 34, id = 8492 },
@@ -821,7 +816,7 @@ ns.SpellBookData = {
             },
         },
         {
-            name = "理解",
+            name = "Comprehension",
             icon = "Interface\\Icons\\Spell_Holy_Mindsooth",
             spells = {
                 { name = "Comprehend Scroll", icon = "Interface\\Icons\\Inv_Misc_Questionmark", id = 1310030, learnLv = 6, ranks = {
@@ -843,6 +838,7 @@ ns.SpellBookData = {
             name = "Holy",
             icon = "Interface\\Icons\\Spell_Holy_Holybolt",
             spells = {
+                { name = "Sense Undead", icon = "Interface\\Icons\\Spell_Holy_Senseundead", id = 5502, learnLv = 1 },
                 { name = "Holy Light", icon = "Interface\\Icons\\Spell_Holy_Holybolt", id = 25292, learnLv = 1, ranks = {
                 { rank = 1, learn = 1, id = 635 },
                 { rank = 2, learn = 6, id = 639 },
@@ -949,8 +945,8 @@ ns.SpellBookData = {
                 { rank = 1, learn = 54, id = 25894 },
                 { rank = 2, learn = 60, id = 25918 },
                 } },
-                { name = "Voice of Truth", icon = "Interface\\Icons\\Inv_Misc_Horn_03", id = 1310897, isTalent = true },
                 { name = "Divine Favor", icon = "Interface\\Icons\\Spell_Holy_Heal", id = 20216, isTalent = true },
+                { name = "Oath of Light", icon = "Interface\\Icons\\Spell_Holy_Greaterblessingoflight", id = 1328548, isTalent = true },
             },
         },
         {
@@ -990,7 +986,7 @@ ns.SpellBookData = {
                 { rank = 6, learn = 50, id = 20422 },
                 { rank = 7, learn = 58, id = 20423 },
                 } },
-                { name = "Righteous Fury", icon = "Interface\\Icons\\Spell_Holy_Sealoffury", id = 25780, learnLv = 16 },
+                { name = "Righteous Fury", icon = "Interface\\Icons\\Spell_Holy_Sealoffury", id = 25780, learnLv = 10 },
                 { name = "Blessing of Freedom", icon = "Interface\\Icons\\Spell_Holy_Sealofvalor", id = 1044, learnLv = 18 },
                 { name = "Blessing of Kings", icon = "Interface\\Icons\\Spell_Magic_Magearmor", id = 20217, learnLv = 20 },
                 { name = "Concentration Aura", icon = "Interface\\Icons\\Spell_Holy_Mindsooth", id = 19746, learnLv = 22 },
@@ -1015,11 +1011,11 @@ ns.SpellBookData = {
                 { rank = 2, learn = 48, id = 19899 },
                 { rank = 3, learn = 60, id = 19900 },
                 } },
-                { name = "Hammer of the Righteous", icon = "Interface\\Icons\\Ability_Paladin_Hammeroftherighteous", id = 407632, learnLv = 40 },
-                { name = "Holy Shield", icon = "Interface\\Icons\\Spell_Holy_Blessingofprotection", id = 20928, learnLv = 40, isTalent = true, ranks = {
-                { rank = 1, learn = 40, id = 20925 },
-                { rank = 2, learn = 50, id = 20927 },
-                { rank = 3, learn = 60, id = 20928 },
+                { name = "Holy Shield", icon = "Interface\\Icons\\Spell_Holy_Blessingofprotection", id = 1239570, learnLv = 30, isTalent = true, ranks = {
+                { rank = 1, learn = 30, id = 20925 },
+                { rank = 2, learn = 40, id = 20927 },
+                { rank = 3, learn = 50, id = 20928 },
+                { rank = 4, learn = 60, id = 1239570 },
                 } },
                 { name = "Blessing of Sacrifice", icon = "Interface\\Icons\\Spell_Holy_Sealofsacrifice", id = 20729, learnLv = 46, ranks = {
                 { rank = 1, learn = 46, id = 6940 },
@@ -1084,7 +1080,7 @@ ns.SpellBookData = {
             },
         },
         {
-            name = "坐骑",
+            name = "Mounts",
             icon = "Interface\\Icons\\Ability_Hunter_Catlikereflexes",
             spells = {
                 { name = "Summon Warhorse", icon = "Interface\\Icons\\Spell_Nature_Swiftness", id = 1279399, learnLv = 40, ranks = {
@@ -1097,7 +1093,7 @@ ns.SpellBookData = {
         },
     },
     PRIEST = {
-        total = 57,
+        total = 56,
         tabs = {
         {
             name = "Discipline",
@@ -1292,14 +1288,6 @@ ns.SpellBookData = {
                 { rank = 5, learn = 52, id = 27800 },
                 { rank = 6, learn = 60, id = 27801 },
                 } },
-                { name = "Binding Heal", icon = "Interface\\Icons\\Spell_Holy_Blindingheal", id = 1240774, learnLv = 25, isTalent = true, ranks = {
-                { rank = 1, learn = 25, id = 401937 },
-                { rank = 2, learn = 32, id = 1240770 },
-                { rank = 3, learn = 38, id = 1240771 },
-                { rank = 4, learn = 44, id = 1240772 },
-                { rank = 5, learn = 50, id = 1240773 },
-                { rank = 6, learn = 56, id = 1240774 },
-                } },
                 { name = "Prayer of Healing", icon = "Interface\\Icons\\Spell_Holy_Prayerofhealing02", id = 25316, learnLv = 30, ranks = {
                 { rank = 1, learn = 30, id = 596 },
                 { rank = 2, learn = 40, id = 996 },
@@ -1452,7 +1440,7 @@ ns.SpellBookData = {
         },
     },
     ROGUE = {
-        total = 57,
+        total = 56,
         tabs = {
         {
             name = "Mutilate",
@@ -1516,7 +1504,6 @@ ns.SpellBookData = {
                 { rank = 4, learn = 60, id = 1241584 },
                 } },
                 { name = "Cold Blood", icon = "Interface\\Icons\\Spell_Ice_Lament", id = 14177, isTalent = true },
-                { name = "Venom", icon = "Interface\\Icons\\Inv_Sword_31", id = 1310703, isTalent = true },
             },
         },
         {
@@ -1644,7 +1631,7 @@ ns.SpellBookData = {
         },
     },
     SHAMAN = {
-        total = 57,
+        total = 56,
         tabs = {
         {
             name = "Elemental Combat",
@@ -1722,12 +1709,6 @@ ns.SpellBookData = {
                 { rank = 4, learn = 56, id = 10587 },
                 } },
                 { name = "Call of the Ancestors", icon = "Interface\\Icons\\Spell_Shaman_Dropall_02", id = 66843, learnLv = 30 },
-                { name = "Lava Burst", icon = "Interface\\Icons\\Spell_Shaman_Lavaburst", id = 1326047, learnLv = 30, isTalent = true, ranks = {
-                { rank = 1, learn = 30, id = 408490 },
-                { rank = 2, learn = 40, id = 1238299 },
-                { rank = 3, learn = 50, id = 1238300 },
-                { rank = 4, learn = 60, id = 1326047 },
-                } },
                 { name = "Chain Lightning", icon = "Interface\\Icons\\Spell_Nature_Chainlightning", id = 10605, learnLv = 32, ranks = {
                 { rank = 1, learn = 32, id = 421 },
                 { rank = 2, learn = 40, id = 930 },
@@ -1735,7 +1716,7 @@ ns.SpellBookData = {
                 { rank = 4, learn = 56, id = 10605 },
                 } },
                 { name = "Call of the Spirits", icon = "Interface\\Icons\\Spell_Shaman_Dropall_03", id = 66844, learnLv = 40 },
-                { name = "Elemental Mastery", icon = "Interface\\Icons\\Spell_Nature_Wispheal", id = 16166, isTalent = true },
+                { name = "Lightning Mastery", icon = "Interface\\Icons\\Spell_Nature_Unrelentingstorm", id = 16166, isTalent = true },
             },
         },
         {
@@ -1791,7 +1772,7 @@ ns.SpellBookData = {
                 { rank = 5, learn = 58, id = 16356 },
                 } },
                 { name = "Ghost Wolf", icon = "Interface\\Icons\\Spell_Nature_Spiritwolf", id = 2645, learnLv = 20 },
-                { name = "Totemic Projection", icon = "Interface\\Icons\\Ability_Shaman_Totemrelocation", id = 437009, learnLv = 22 },
+                { name = "Totemic Call", icon = "Interface\\Icons\\Ability_Shaman_Totemrelocation", id = 437009, learnLv = 22 },
                 { name = "Water Breathing", icon = "Interface\\Icons\\Spell_Shadow_Demonbreath", id = 131, learnLv = 22 },
                 { name = "Frost Resistance Totem", icon = "Interface\\Icons\\Spell_Frostresistancetotem_01", id = 10479, learnLv = 24, ranks = {
                 { rank = 1, learn = 24, id = 8181 },
@@ -2181,7 +2162,7 @@ ns.SpellBookData = {
             },
         },
         {
-            name = "坐骑",
+            name = "Mounts",
             icon = "Interface\\Icons\\Ability_Hunter_Catlikereflexes",
             spells = {
                 { name = "Summon Felsteed", icon = "Interface\\Icons\\Spell_Nature_Swiftness", id = 5784, learnLv = 40 },

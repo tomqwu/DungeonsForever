@@ -88,7 +88,7 @@ local function SizeText(n)
 end
 
 local function IsCnClient()
-    return type(GetLocale) == "function" and GetLocale() == "zhCN"
+    return type(DF_Locale) == "function" and DF_Locale() == "zhCN"
 end
 
 function RU.DayShift(cn)
@@ -753,7 +753,8 @@ function RU.PaintBatchChips()
         if item and item.bt then
             local sel = (item.key == cur)
             SetButtonSelected(item.bt, sel)
-            fs:SetAlpha(sel and 1 or 0.82)
+            local fs = item.bt.GetFontString and item.bt:GetFontString()
+            if fs then fs:SetAlpha(sel and 1 or 0.82) end
         end
     end
 end

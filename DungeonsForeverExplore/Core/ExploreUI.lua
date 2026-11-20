@@ -30,12 +30,12 @@ local BANNER = ns.ExploreBanner or {}
 
 local BAG_REQ_LVL, BAG_QUEST_LVL = 14, 40
 local BAG_CHAIN = {
-    { key = "p1", no = "①", title = "…and that note you found", lvl = 22, xp = 1750,
+    { key = "p1", no = ns.SYM.n[1], title = "…and that note you found", lvl = 22, xp = 1750,
       q = { A = 79008, H = 79007 },
       note = L["全链起点：无 NPC，在阿历克斯顿农场烧毁的田地点「烧焦的残骸」起链，旁边立着一块镶钉木板；两阵营从这里反向出发。"],
-      route = { body = {
+      route = { H = { body = {
           L["炉石可以绑在十字路口。后面从西部荒野直接炉石回来，省掉一整套回程飞行。"],
-      } },
+      } } },
       loc = {
           A = { area = 40, x = 37.4, y = 50.6, zn = L["西部荒野 37.4,50.6"],
                 place = L["西部荒野 · 阿历克斯顿农场"], obj = L["烧焦的残骸"] },
@@ -43,9 +43,9 @@ local BAG_CHAIN = {
                 place = L["贫瘠之地 · 陶拉祖营地以南烧毁塔楼"], obj = L["烧焦的残骸"] },
       },
       rw = { { 2459 }, { 3388 } } },
-    { key = "p2", no = "②", title = "Stepping Stones", lvl = 24, xp = 1950, q = 79192,
+    { key = "p2", no = ns.SYM.n[2], title = "Stepping Stones", lvl = 24, xp = 1950, q = 79192,
       note = L["两阵营互交互：在对方大陆的「烧焦的残骸 / 镶钉木板」上交①，再从镶钉木板接取本步；必给里的旧工具箱是 12 格包。"],
-      route = {
+      route = { H = {
           head = L["路线：奥格瑞玛坐飞艇 → 飞艇跳海 → 西部荒野"],
           body = {
               L["十字路口坐飞行点去奥格瑞玛，出城坐开往荆棘谷格罗姆高的飞艇。"],
@@ -54,7 +54,7 @@ local BAG_CHAIN = {
               L["穿过小岛后继续朝西南方向游，直奔西部荒野南岸，从南边上岸。"],
               { L["到西部荒野 "], { 40, 37.4, 50.6 }, L["，在损坏的马车旁交接任务。"] },
           },
-      },
+      } },
       loc = {
           A = { area = 17, x = 46.0, y = 74.0, zn = L["贫瘠之地 46,74"],
                 place = L["贫瘠之地 · 陶拉祖营地以南烧毁塔楼"], obj = L["烧焦的残骸"] },
@@ -64,9 +64,9 @@ local BAG_CHAIN = {
       rw = { { 2901, note = L["二选一"] }, { 3334, note = L["二选一"] },
              { 1652 }, { 4470, note = L["营火材料"] }, { 4471, note = L["营火材料"] },
              { 221498, note = L["12 格包"] } } },
-    { key = "p3", no = "③", title = "Scramble", lvl = 24, xp = 200, q = 79980,
+    { key = "p3", no = ns.SYM.n[3], title = "Scramble", lvl = 24, xp = 200, q = 79980,
       note = { L["从烈日石居东北 "], { 406, 50.9, 52.3 }, L[" 的小路离开大路，往西翻过山到废弃营地，点箱子上的「散落杂物」交接；烈日石居是部落据点，联盟会从守卫旁经过。"] },
-      route = {
+      route = { H = {
           head = L["路线：回程与石爪山"],
           body = {
               L["接完②直接炉石回十字路口，不要飞回去。"],
@@ -75,7 +75,7 @@ local BAG_CHAIN = {
               L["贴着右侧山体继续向前，到悬崖上的任务点完成③、接④。"],
               L["回烈日石居，坐飞行点回陶拉祖营地。"],
           },
-      },
+      } },
       loc = { area = 406, x = 40.7, y = 52.4, zn = L["石爪山脉 40.7,52.4"],
               place = L["石爪山脉 · 烈日石居上方废弃营地"], obj = L["散落杂物"] },
       rw = { { 3463, note = L["三选一 · 魔杖"] }, { 217314, note = L["三选一"] },
@@ -85,14 +85,14 @@ local BAG_CHAIN = {
       loc = { area = 406, x = nil, y = nil, zn = L["同营地 · 营火"],
               place = L["石爪山脉 · 同营地营火（可选）"], obj = L["营火"] },
       rw = {} },
-    { key = "p4", no = "④", title = "Wet Job", lvl = 32, xp = 2550, q = 79974,
+    { key = "p4", no = ns.SYM.n[4], title = "Wet Job", lvl = 32, xp = 2550, q = 79974,
       note = L["爬上营地北边的山丘，跳到土堆上点它，途中要跳过一道缺口；注意摔落伤害。"],
       loc = { area = 406, x = 39.6, y = 49.9, zn = L["石爪山脉 39.6,49.9"],
               place = L["石爪山脉 · 营地正北山丘土堆"], obj = L["土堆"] },
       rw = { { 5432 }, { 20709 } } },
-    { key = "p5", no = "⑤", title = "Eagle's Fist", lvl = 32, xp = 2550, q = 79975,
+    { key = "p5", no = ns.SYM.n[5], title = "Eagle's Fist", lvl = 32, xp = 2550, q = 79975,
       note = L["沿巨石水坝走出去、面向北方湿地，跳到坝顶下方的矮人头像雕刻上交接；水坝有联盟守卫，部落小心。"],
-      route = {
+      route = { H = {
           head = L["路线：灵魂两次从塞拉摩坐船到湿地 → 洛克莫丹"],
           body = {
               L["原理：让灵魂虚弱阵亡在目的地、再用灵魂状态坐船过去复活。"],
@@ -110,11 +110,11 @@ local BAG_CHAIN = {
               L["释放灵魂，直接在洛克莫丹虚弱复活。"],
               L["从塞尔萨玛跑向洛克莫丹的巨石水坝。"],
           },
-      },
+      } },
       loc = { area = 38, x = 49.4, y = 12.9, zn = L["洛克莫丹 49.4,12.9"],
               place = L["洛克莫丹 · 巨石水坝矮人头像雕刻"], obj = L["雕刻塑像"] },
       rw = {} },
-    { key = "p6", no = "⑥", title = "This Must Be The Place", lvl = 32, xp = 1950, q = 79976,
+    { key = "p6", no = ns.SYM.n[6], title = "This Must Be The Place", lvl = 32, xp = 1950, q = 79976,
       note = { L["最大难点：敦霍尔德城堡东南方的推车（"], { 267, 87.4, 49.7 },
                L[" ）跳上索拉丁之墙，穿过墙内房间点阿拉希一侧的信使行囊（"], { 45, 22.4, 24.2 },
                L[" ）交接、再点下方草草收起的包裹拿睡袋；PVP 服小心。"] },
@@ -127,14 +127,14 @@ local BAG_FINAL_ID = 211527
 local BAG_FINAL_DESC = L["铺开睡袋躺进去休息：每躺满 1 分钟叠 1 层 +1% 经验，最多 3 层（共 3%），持续 2 小时；铺开需原地站 15 秒，睡袋落地留 20 分钟，使用冷却 1 小时。每 1~2 小时铺一次、躺满 3 分钟即可常驻 3%，队友可同躺。"]
 local BAG_RW_GROUPS = {
     { head = L["二选一 · 第②步"],
-      items = { { 2901, "②" }, { 3334, "②" } } },
+      items = { { 2901, ns.SYM.n[2] }, { 3334, ns.SYM.n[2] } } },
     { head = L["三选一 · 第③步"],
-      items = { { 3463, L["③ · 魔杖"] }, { 217314, "③" }, { 217315, "③" } } },
+      items = { { 3463, L["③ · 魔杖"] }, { 217314, ns.SYM.n[3] }, { 217315, ns.SYM.n[3] } } },
     { head = L["链中必给"],
-      items = { { 221498, L["12 格包 · ②"] }, { 216619, "×5 · ③⑥" }, { 1652, "②" },
-                { 4470, L["② 营火材料"] }, { 4471, L["② 营火材料"] }, { 3464, "③" },
-                { 3465, "③" }, { 2459, "①" }, { 3388, "①" },
-                { 5432, "④" }, { 20709, "④" } } },
+      items = { { 221498, L["12 格包 · ②"] }, { 216619, ns.Sym("×5 · ③⑥") }, { 1652, ns.SYM.n[2] },
+                { 4470, L["② 营火材料"] }, { 4471, L["② 营火材料"] }, { 3464, ns.SYM.n[3] },
+                { 3465, ns.SYM.n[3] }, { 2459, ns.SYM.n[1] }, { 3388, ns.SYM.n[1] },
+                { 5432, ns.SYM.n[4] }, { 20709, ns.SYM.n[4] } } },
 }
 
 local BM_ID = {
@@ -268,7 +268,7 @@ EG.BM_BUNDLE = BM_BUNDLE
 EG.BagChain = BAG_CHAIN
 EG.BagReward = BAG_FINAL_ID
 
-EG.NAV_X, EG.NAV_W = PAGE_INSET, 148
+EG.NAV_X, EG.NAV_W = PAGE_INSET, ns.WIDE_UI and 184 or 148
 EG.NAV_GROUP_H = 24
 EG.NAV_ITEM_H, EG.NAV_GAP = 24, 8
 EG.NAV_ICON = 18
@@ -405,6 +405,13 @@ local function BagStep(entry, fac)
     return loc, qid
 end
 
+local function BagRoute(entry, fac)
+    local rt = entry and entry.route
+    if type(rt) ~= "table" then return nil end
+    if rt.A or rt.H then return rt[fac] end
+    return rt
+end
+
 local function ToyQuestTitle(qid)
     if qid and type(C_QuestLog) == "table" and C_QuestLog.GetTitleForQuestID then
         local ok, t = pcall(C_QuestLog.GetTitleForQuestID, qid)
@@ -461,6 +468,7 @@ local function CurSub()
     if db.explore.subPage == "banner" then return "banner" end
     if db.explore.subPage == "routes" then return "routes" end
     if db.explore.subPage == "dm" then return "dm" end
+    if db.explore.subPage == "sg" then return "sg" end
     return "books"
 end
 
@@ -581,13 +589,11 @@ function EG.MarkPoint(areaID, x, y)
         return
     end
     if type(x) == "number" and type(y) == "number"
-       and UiMapPoint and UiMapPoint.CreateFromCoordinates and C_Map and C_Map.SetUserWaypoint then
-        local pok, pt = pcall(UiMapPoint.CreateFromCoordinates, mapID, x / 100, y / 100)
-        if pok and pt then
-            pcall(C_Map.SetUserWaypoint, pt)
-            if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
-                pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
-            end
+       and C_Map and C_Map.SetUserWaypoint and _G.CreateVector2D then
+        local pt = { uiMapID = mapID, position = _G.CreateVector2D(x / 100, y / 100) }
+        pcall(C_Map.SetUserWaypoint, pt)
+        if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
+            pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
         end
     end
     if C_Map and C_Map.OpenWorldMap then
@@ -944,7 +950,7 @@ local function PaintCoords(r, rec)
         local zn2 = LocName(last)
         if zn1 ~= zn2 or dsg then r.d:SetText(zn1) end
         r.c2:SetText(format("%.1f, %.1f", s1[2] or 0, s1[3] or 0))
-        r.arr:SetText("→")
+        r.arr:SetText(ns.SYM.arrow)
         if dsg then
             r.d2:SetText(zn2)
             r.d2:ClearAllPoints()
@@ -1140,6 +1146,7 @@ function EG.OnItemData(itemID)
     if not EG.built or not itemID then return end
     if not ns.PageVisible(EG.page) then return end
     EG._sweepFails = 0
+    if EG.sgRefreshNames then pcall(EG.sgRefreshNames) end
     if not EG.needNames or EG._itemRepaint then return end
     EG._itemRepaint = true
     if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
@@ -1909,8 +1916,9 @@ local function PaintBagDetail(fac)
         EG.bagDN:SetShown(true)
         y = y + TextH(EG.bagDN, avail) + 6
     end
-    if e.route then
-        y = PaintBagRoute(e.route, y + 4, avail)
+    local rt = BagRoute(e, fac)
+    if rt then
+        y = PaintBagRoute(rt, y + 4, avail)
     else
         PaintBagRoute(nil, y, avail)
     end
@@ -2161,14 +2169,11 @@ end
 
 function RtGo(mapID, x, y)
     if type(x) == "number" and type(y) == "number"
-       and UiMapPoint and UiMapPoint.CreateFromCoordinates
-       and C_Map and C_Map.SetUserWaypoint then
-        local pok, pt = pcall(UiMapPoint.CreateFromCoordinates, mapID, x / 100, y / 100)
-        if pok and pt then
-            pcall(C_Map.SetUserWaypoint, pt)
-            if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
-                pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
-            end
+       and C_Map and C_Map.SetUserWaypoint and _G.CreateVector2D then
+        local pt = { uiMapID = mapID, position = _G.CreateVector2D(x / 100, y / 100) }
+        pcall(C_Map.SetUserWaypoint, pt)
+        if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
+            pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
         end
     end
     if C_Map and C_Map.OpenWorldMap then
@@ -3138,7 +3143,7 @@ local function PetSeg(card, k)
     return sg
 end
 
-local PET_NUM = { "①", "②", "③", "④", "⑤" }
+local PET_NUM = { ns.SYM.n[1], ns.SYM.n[2], ns.SYM.n[3], ns.SYM.n[4], ns.SYM.n[5] }
 
 local function PetFlow(card, idx, segs, y, maxW)
     local x = 0
@@ -3514,6 +3519,9 @@ function EG.LayoutBody()
         end
         BagLayoutRows()
     end
+    if EG.sgFrame and ns.ExploreSunGlassesLayout then
+        ns.ExploreSunGlassesLayout(EG)
+    end
     if EG.bmFrame then
         EG.bmFrame:ClearAllPoints()
         EG.bmFrame:SetPoint("TOPLEFT", EG.page, "TOPLEFT", EG.X0, -EG.TOP_EDGE)
@@ -3664,8 +3672,9 @@ function EG.Render()
     local isBanner = sub == "banner"
     local isRoutes = sub == "routes"
     local isDm = sub == "dm"
+    local isSg = sub == "sg"
     local isCard = isPets or isTorch or isBanner
-    local isFull = isRw or isBag or isBm or isCard or isRoutes or isDm
+    local isFull = isRw or isBag or isBm or isCard or isRoutes or isDm or isSg
     if EG.listCard then EG.listCard:SetShown(not isRoutes) end
     EG.scroll:SetShown(not isFull)
     if EG.UpdateVScroll then EG.UpdateVScroll() end
@@ -3685,6 +3694,7 @@ function EG.Render()
     if EG.petFrame then EG.petFrame:SetShown(isCard) end
     if EG.dmFrame then EG.dmFrame:SetShown(isDm) end
     if EG.routeFrame then EG.routeFrame:SetShown(isRoutes) end
+    if EG.sgFrame then EG.sgFrame:SetShown(isSg) end
     PaintNav()
     if EG.rwBtn then PaintRwBtn() end
     if EG.pinBtn then PaintPinsBtn() end
@@ -3724,6 +3734,18 @@ function EG.Render()
             if EG.bmFrame then EG.bmFrame:Hide() end
             if EG.petFrame then EG.petFrame:Hide() end
             if EG.routeFrame then EG.routeFrame:Hide() end
+            return
+        end
+    end
+    if EG.sgFrame then
+        EG.sgFrame:SetShown(isSg)
+        if isSg then
+            if EG.bagFrame then EG.bagFrame:Hide() end
+            if EG.bmFrame then EG.bmFrame:Hide() end
+            if EG.petFrame then EG.petFrame:Hide() end
+            if EG.dmFrame then EG.dmFrame:Hide() end
+            if EG.routeFrame then EG.routeFrame:Hide() end
+            if ns.ExploreSunGlassesRefresh then ns.ExploreSunGlassesRefresh(EG) end
             return
         end
     end
@@ -3912,6 +3934,26 @@ function EG.Build(page)
         coroutine.yield()
         navY = navY + EG.NAV_ITEM_H + EG.NAV_GAP
     end
+    do
+        local bt = NewButton(page, L["太阳眼镜"], EG.NAV_W, EG.NAV_ITEM_H, 16)
+        bt:SetPoint("TOPLEFT", page, "TOPLEFT", EG.NAV_X + EG.NAV_PAD, -(EG.NAV_TOP + navY))
+        local fs = bt:GetFontString()
+        fs:ClearAllPoints()
+        fs:SetPoint("LEFT", bt, "LEFT", 5 + EG.NAV_ICON + 5, 0)
+        fs:SetJustifyH("LEFT")
+        bt.__huiKeepTextColor = true
+        bt.__icon = bt:CreateTexture(nil, "ARTWORK")
+        bt.__icon:SetSize(EG.NAV_ICON, EG.NAV_ICON)
+        bt.__icon:SetPoint("LEFT", bt, "LEFT", 5, 0)
+        bt.__icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        if ns.hui and ns.hui.RoundIcon then ns.hui.RoundIcon(bt.__icon) end
+        bt.__icon:SetTexture(133149)
+        bt:SetScript("OnClick", function() SetSub("sg") end)
+        EG.navBtns["sg"] = bt
+        coroutine.yield()
+        EG.navSg = bt
+        navY = navY + EG.NAV_ITEM_H + EG.NAV_GAP
+    end
 
     do
         local glab = MakeFS(labelHost, 16, C_GREY, "LEFT")
@@ -4043,7 +4085,6 @@ function EG.Build(page)
         EG.navDm = bt
         navY = navY + EG.NAV_ITEM_H + EG.NAV_GAP
     end
-
     EG.prog = MakeFS(labelHost, 14, C_TEXT, "RIGHT")
     EG.prog:SetPoint("TOPRIGHT", page, "TOPRIGHT", -(EG.EDGE + EG.LIST_PAD), -EG.TICK_Y)
     EG.note = MakeFS(labelHost, 14, { 0.55, 0.75, 0.55 }, "LEFT")
@@ -4713,7 +4754,7 @@ function EG.Build(page)
             EG.bagProg:SetWordWrap(false)
 
             local NOTE_PAD = 8
-            local NCOL_W = 138
+            local NCOL_W = ns.WIDE_UI and 178 or 138
             local NOTE_TAIL1 = L["：吃一口立即回 500 血、12 秒内再回 1050，并回复法力 / 50 怒气 / 100 能量，5 分钟冷却、最多叠 30 个；"]
             local NOTE_SUB = L["旧版的休息经验加成在无限服已移除，当应急干粮就好；吃下去还会附一波「方便零嘴」（0.75 秒 60% 移速）；"]
             local NOTE_TAIL2 = L["：躺满 1 分钟 +1% 经验、最多 3 层、持续 2 小时；铺开需原地站 15 秒、睡袋落地留 20 分钟，冷却 1 小时，队友可同躺"]
@@ -4828,6 +4869,7 @@ function EG.Build(page)
             det:SetPoint("TOPLEFT", bag, "TOPLEFT", LW + 8, -BODY_Y)
             det:SetPoint("BOTTOMRIGHT", bag, "BOTTOMRIGHT", 0, EG.bagNoteH + 8)
             ns.hui.SkinPopup(det, 8, nil, ns.hui.layer.L2)
+            local rs, rc
             det:EnableMouseWheel(true)
             det:SetScript("OnMouseWheel", function(_, delta)
                 DG.WheelScroll(rs, rc, delta)
@@ -4835,8 +4877,7 @@ function EG.Build(page)
             end)
             EG.bagDetail = det
 
-            local rc
-            local rs = CreateFrame("ScrollFrame", nil, det)
+            rs = CreateFrame("ScrollFrame", nil, det)
             if rs.SetClipsChildren then rs:SetClipsChildren(true) end
             rs:EnableMouseWheel(true)
             rs:SetScript("OnMouseWheel", function(_, delta)
@@ -4973,6 +5014,8 @@ function EG.Build(page)
                 nb.icon = ic
                 local nf = MakeFS(nb, 14, C_TEXT, "LEFT")
                 nf:SetPoint("LEFT", ic, "RIGHT", 4, 0)
+                nf:SetWidth(NM.colW - 10 - 22 - 6)
+                nf:SetWordWrap(false)
                 nb.nm = nf
                 nb:SetScript("OnEnter", function(self) EG.BagChipTip(self, true) end)
                 nb:SetScript("OnLeave", function(self) EG.BagChipTip(self, false) end)
@@ -5143,6 +5186,7 @@ function EG.Build(page)
             tot:SetPoint("TOPLEFT", bag, "TOPLEFT", LW + 8, -BODY_Y)
             tot:SetPoint("BOTTOMRIGHT", bag, "BOTTOMRIGHT", 0, EG.bagNoteH + 8)
             ns.hui.SkinPopup(tot, 8, nil, ns.hui.layer.L2)
+            local ts, tc
             tot:EnableMouseWheel(true)
             tot:SetScript("OnMouseWheel", function(_, delta)
                 DG.WheelScroll(ts, tc, delta)
@@ -5151,8 +5195,7 @@ function EG.Build(page)
             tot:Hide()
             EG.bagTotal = tot
 
-            local tc
-            local ts = CreateFrame("ScrollFrame", nil, tot)
+            ts = CreateFrame("ScrollFrame", nil, tot)
             if ts.SetClipsChildren then ts:SetClipsChildren(true) end
             ts:EnableMouseWheel(true)
             ts:SetScript("OnMouseWheel", function(_, delta)
@@ -5741,7 +5784,7 @@ Y()
                 local items = {}
                 for _, k in ipairs({ "native", "circle", "custom" }) do
                     items[#items + 1] = {
-                        text = (cur == k and "● " or "") .. GS_NAME[k],
+                        text = (cur == k and (ns.SYM.dot .. " ") or "") .. GS_NAME[k],
                         icon = GS_ICON[k],
                         func = function() pick(k) end,
                     }
@@ -6151,6 +6194,14 @@ Y()
     if curSub == "routes" then
         EG.__subBuild.routes = nil
         buildRoutes()
+    end
+
+    EG.__subBuild.sg = function()
+        if ns.ExploreSunGlassesBuild then ns.ExploreSunGlassesBuild(EG, page) end
+    end
+    if curSub == "sg" then
+        EG.__subBuild.sg = function() end
+        if ns.ExploreSunGlassesBuild then ns.ExploreSunGlassesBuild(EG, page) end
     end
 
     EG.__subBuild.dm = function()

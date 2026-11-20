@@ -16,6 +16,7 @@ local W = {}
 ns.MapWorldModule = W
 
 local pendingMap
+local dropDown
 
 local function inCombat()
     return type(InCombatLockdown) == "function" and InCombatLockdown() and true or false
@@ -576,7 +577,39 @@ local function instStamp()
     return tostring(info.instID or "") .. "|" .. tostring(info.name or "")
 end
 
-function W.Resolve()
+local INST_PICK, INST_N = {}, 0
+
+local function instMemoGet()
+    local k = instStamp()
+    if not k then return nil end
+    return INST_PICK[k]
+end
+
+local function instMemoSet(id)
+    local k = instStamp()
+    if not (k and type(id) == "string" and id ~= "" and hasArt(id)) then return end
+    if INST_PICK[k] == id then return end
+    if INST_PICK[k] == nil then
+        INST_N = INST_N + 1
+        if INST_N > 64 then
+            INST_PICK, INST_N = {}, 1
+        end
+    end
+    INST_PICK[k] = id
+end
+
+function W.NoteInstPick(id)
+    instMemoSet(id)
+end
+
+local memoDriver = CreateFrame("Frame")
+memoDriver:RegisterEvent("PLAYER_ENTERING_WORLD")
+memoDriver:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+memoDriver:SetScript("OnEvent", function()
+    INST_PICK, INST_N = {}, 0
+end)
+
+local function resolveCore()
     if not enabled() then return nil end
     local IM = mapTable()
     local cur = hasArt(M.curId) and M.curId or nil
@@ -614,6 +647,8 @@ function W.Resolve()
             return id, "inst"
         end
     end
+    local memo = instMemoGet()
+    if memo then return memo, "memo" end
     local names = { info and info.name, zoneText() }
     for i = 1, #names do
         local nm = names[i]
@@ -636,6 +671,12 @@ function W.Resolve()
     end
     if cur and W.curStamp and W.curStamp == instStamp() then return cur, "cur" end
     return nil
+end
+
+function W.Resolve()
+    local id, why = resolveCore()
+    if id then instMemoSet(id) end
+    return id, why
 end
 
 local function subZoneKey()
@@ -744,7 +785,7 @@ local function paintArt(view, id, idx, cw, ch)
         for i = 1, #lay do
             local p = lay[i]
             local t = view.tiles[p.n]
-            t:SetTexture((fixTile and fixTile[p.n]) or (path .. p.n))
+            M.SetTile(t, id, idx, path, p.n, fixTile and fixTile[p.n])
             t:SetTexCoord(p.u0, p.u1, p.v0, p.v1)
             t:ClearAllPoints()
             t:SetPoint("TOPLEFT", view.canvas, "TOPLEFT", p.x, -p.y)
@@ -834,92 +875,115 @@ local function paintSegWorld(view, si, on)
     end
 end
 
+local function routeJobKey(view)
+    return "dfRoute:" .. tostring(view)
+end
+
+local function cancelRouteJob(view)
+    if view and ns.PaintJob then ns.PaintJob.Cancel(routeJobKey(view)) end
+end
+
 local function syncRoute(view, id, floor, cw, ch)
+    if ns.PaintJob then ns.PaintJob.Cancel(routeJobKey(view)) end
     local used = view.routeUsed or 0
-    local n = 0
     local hv = M.NewSegHover(view.route, function(si, on) paintSegWorld(view, si, on) end)
     if hv.seg then hv:Set(nil) end
     view.routeUsed = 0
-    if id and floor and M.RouteOn(id) and not M.routeOff then
-        local segs = ns.DungeonRoute and ns.DungeonRoute[id] and ns.DungeonRoute[id][floor]
-        if type(segs) == "table" and #segs > 0 then
-            local arr, total, dsh = {}, 0, {}
-            for si = 1, #segs do
-                if M.routeHidden[M.RouteSegKey(id, floor, si)] then
-                    arr[si] = nil
-                else
-                    local src = segs[si].pts
-                    local dst = {}
-                    for i = 1, #src do
-                        dst[i] = { (src[i][1] / 100) * cw, (src[i][2] / 100) * ch }
-                    end
-                    dst = smoothPts(dst)
-                    for i = 2, #dst do
-                        total = total + math.sqrt((dst[i][1] - dst[i - 1][1]) ^ 2
-                            + (dst[i][2] - dst[i - 1][2]) ^ 2)
-                    end
-                    arr[si] = dst
-                    if segs[si].dash then dsh[si] = true end
-                end
-            end
-            local step = M.ROUTE_STEP
-            local cap = MAX_ROUTE * 0.95
-            if total > 0 and total / step > cap then
-                step = total / cap
-            end
-            local acc = 0
-            local full = false
-            for si = 1, #segs do
-                if full then break end
-                local pts = arr[si]
-                if pts then
-                    local dash = dsh[si]
-                    local period = M.ROUTE_DASH_ON + M.ROUTE_DASH_OFF
-                    local sd = 0
-                    for i = 2, #pts do
-                        if full then break end
-                        local a, b = pts[i - 1], pts[i]
-                        local dx, dy = b[1] - a[1], b[2] - a[2]
-                        local d = math.sqrt(dx * dx + dy * dy)
-                        if d > 0.01 then
-                            local k = math.max(1, math.ceil(d / step))
-                            local du = d / k
-                            for j = 1, k do
-                                if n >= MAX_ROUTE then
-                                    full = true
-                                    break
-                                end
-                                local u = (j - 0.5) / k
-                                local ds = sd + du * (j - 0.5)
-                                if (not dash) or (ds % (M.ROUTE_DASH_ON + M.ROUTE_DASH_OFF) < M.ROUTE_DASH_ON) then
-                                    n = n + 1
-                                    local t = (total > 0) and ((acc + d * u) / total) or 0
-                                    local cr, cg, cb = M.RouteColor(t)
-                                    routeDot(view, a[1] + dx * u, a[2] + dy * u, cr, cg, cb, si)
-                                end
-                            end
-                            sd = sd + d
+    local canYield = ns.PaintJob and true or false
+    local body = function()
+        local n = 0
+        if id and floor and M.RouteOn(id) and not M.routeOff then
+            local segs = ns.DungeonRoute and ns.DungeonRoute[id] and ns.DungeonRoute[id][floor]
+            if type(segs) == "table" and #segs > 0 then
+                local arr, total, dsh = {}, 0, {}
+                for si = 1, #segs do
+                    if M.routeHidden[M.RouteSegKey(id, floor, si)] then
+                        arr[si] = nil
+                    else
+                        local src = segs[si].pts
+                        local dst = {}
+                        for i = 1, #src do
+                            dst[i] = { (src[i][1] / 100) * cw, (src[i][2] / 100) * ch }
                         end
-                        acc = acc + d
+                        dst = smoothPts(dst)
+                        for i = 2, #dst do
+                            total = total + math.sqrt((dst[i][1] - dst[i - 1][1]) ^ 2
+                                + (dst[i][2] - dst[i - 1][2]) ^ 2)
+                        end
+                        arr[si] = dst
+                        if segs[si].dash then dsh[si] = true end
                     end
                 end
+                local step = M.ROUTE_STEP
+                local cap = MAX_ROUTE * 0.95
+                if total > 0 and total / step > cap then
+                    step = total / cap
+                end
+                local acc = 0
+                local full = false
+                local batch = 0
+                for si = 1, #segs do
+                    if full then break end
+                    local pts = arr[si]
+                    if pts then
+                        local dash = dsh[si]
+                        local period = M.ROUTE_DASH_ON + M.ROUTE_DASH_OFF
+                        local sd = 0
+                        for i = 2, #pts do
+                            if full then break end
+                            local a, b = pts[i - 1], pts[i]
+                            local dx, dy = b[1] - a[1], b[2] - a[2]
+                            local d = math.sqrt(dx * dx + dy * dy)
+                            if d > 0.01 then
+                                local k = math.max(1, math.ceil(d / step))
+                                local du = d / k
+                                for j = 1, k do
+                                    if n >= MAX_ROUTE then
+                                        full = true
+                                        break
+                                    end
+                                    local u = (j - 0.5) / k
+                                    local ds = sd + du * (j - 0.5)
+                                    if (not dash) or (ds % (M.ROUTE_DASH_ON + M.ROUTE_DASH_OFF) < M.ROUTE_DASH_ON) then
+                                        n = n + 1
+                                        local t = (total > 0) and ((acc + d * u) / total) or 0
+                                        local cr, cg, cb = M.RouteColor(t)
+                                        routeDot(view, a[1] + dx * u, a[2] + dy * u, cr, cg, cb, si)
+                                        batch = batch + 1
+                                        if canYield and batch >= 64 then
+                                            batch = 0
+                                            coroutine.yield()
+                                        end
+                                    end
+                                end
+                                sd = sd + d
+                            end
+                            acc = acc + d
+                        end
+                    end
+                end
+                hv:Build(view.route, arr, #segs)
             end
-            hv:Build(view.route, arr, #segs)
         end
-    end
-    if n == 0 then hv:HideAll() end
-    for i = n + 1, used do
-        local e = view.routePool[i]
-        if e then
-            e.o:Hide()
-            e.c:Hide()
+        if n == 0 then hv:HideAll() end
+        for i = n + 1, used do
+            local e = view.routePool[i]
+            if e then
+                e.o:Hide()
+                e.c:Hide()
+            end
         end
+        local rsegs = id and floor and ns.DungeonRoute and ns.DungeonRoute[id] and ns.DungeonRoute[id][floor]
+        local nb = M.SyncNoBadges(view.route, "world", cw, ch, M.SegNoItems(id, floor, rsegs, cw, ch, function(i)
+            return M.routeOff or M.routeHidden[M.RouteSegKey(id, floor, i)]
+        end), view.__uiK)
+        view.route:SetShown(n > 0 or (nb or 0) > 0)
     end
-    local rsegs = id and floor and ns.DungeonRoute and ns.DungeonRoute[id] and ns.DungeonRoute[id][floor]
-    local nb = M.SyncNoBadges(view.route, "world", cw, ch, M.SegNoItems(id, floor, rsegs, cw, ch, function(i)
-        return M.routeOff or M.routeHidden[M.RouteSegKey(id, floor, i)]
-    end), view.__uiK)
-    view.route:SetShown(n > 0 or (nb or 0) > 0)
+    if canYield then
+        ns.PaintJob.Run(routeJobKey(view), body, nil, 4)
+    else
+        body()
+    end
 end
 
 local function pinList(id, floor)
@@ -988,8 +1052,10 @@ local function syncPins(view, id, floor, cw, ch)
             local kind = p.kind or "boss"
             local ps = M.PinScale() * (view.__uiK or 1)
             local dim = (kind == "boss") and M.RareBoss(id, p.en) or false
-            bt:SetAlpha(dim and 0.5 or 1)
-            bt.nm:SetAlpha(dim and 0.5 or 1)
+            local killed = (kind == "boss") and M.BossKilled and M.BossKilled(id, p.en) or false
+            local pa = dim and 0.5 or 1
+            bt:SetAlpha(pa)
+            bt.nm:SetAlpha(pa)
             local skip
             n = i
             bt.__kind, bt.__p = kind, p
@@ -1089,8 +1155,15 @@ local function syncPins(view, id, floor, cw, ch)
                 bt.dot:Hide()
                 bt.__av:Show()
                 local isSel = (M.detailEn == p.en) or false
-                M.PaintBossPin(bt.__av, M.BossPinDisplay(id, p.en), cr, cg, cb,
-                    (isSel and M.PIN_SIZE or M.PIN_MIN) * ps)
+                local asz = (isSel and M.PIN_SIZE or M.PIN_MIN) * ps
+                M.PaintBossPin(bt.__av, M.BossPinDisplay(id, p.en), cr, cg, cb, asz)
+                if M.PaintBossDim then
+                    local a = (killed and not dim) and (M.DEAD_ALPHA or 0.45) or 1
+                    M.PaintBossDim(bt.__av, a)
+                end
+                if M.PaintBossDead then
+                    M.PaintBossDead(bt.__av, killed, asz, view.__mini)
+                end
             end
             local sel = (kind == "boss") and (M.detailEn == p.en) or false
             if kind == "boss" and not sel then nm = "" end
@@ -1360,6 +1433,177 @@ local function syncOpenWinBtn()
     end
     if not bt:IsShown() then bt:Show() end
 end
+
+local PINLOGO_TEX = M.LOGO_TEX or "Interface\\AddOns\\DungeonsForever\\Media\\Brand\\DungeonsForever.blp"
+local PINLOGO_SLOT = 32
+local PINLOGO_X = 3
+local pinLogoCands = {}
+
+local function pinLogoOn()
+    if M.PinsHidden then return not M.PinsHidden() end
+    local s = DungeonsForeverDB and DungeonsForeverDB.dungeon
+    if type(s) ~= "table" then return true end
+    return s.mapPinsHidden ~= true
+end
+
+local function pinLogoHost()
+    local wmf = WorldMapFrame
+    if not wmf then return nil end
+    if wmf.GetCanvasContainer then
+        local ok, h = pcall(wmf.GetCanvasContainer, wmf)
+        if ok and h then return h end
+    end
+    return wmf
+end
+
+local function pinLogoFrames()
+    local n = 0
+    local wmf = WorldMapFrame
+    local ov = wmf and wmf.overlayFrames
+    if ov then
+        for i = 1, #ov do
+            local f = ov[i]
+            if f and f ~= W.pinLogo then
+                n = n + 1
+                pinLogoCands[n] = f
+            end
+        end
+    end
+    local Q = _G.Questie
+    local qb = Q and Q.WorldMap and Q.WorldMap.Button
+    if qb and qb ~= W.pinLogo then
+        n = n + 1
+        pinLogoCands[n] = qb
+    end
+    local okL, lib = pcall(function()
+        return LibStub and LibStub("Krowi_WorldMapButtons-1.4", true)
+    end)
+    local lbt = (okL and type(lib) == "table") and lib.Buttons or nil
+    if lbt then
+        for i = 1, #lbt do
+            local f = lbt[i]
+            if f and f ~= W.pinLogo then
+                n = n + 1
+                pinLogoCands[n] = f
+            end
+        end
+    end
+    return n
+end
+
+local function pinLogoDrop(host)
+    local top, left = host:GetTop(), host:GetLeft()
+    if not (top and left) then return PINLOGO_SLOT end
+    local drop = 0
+    local n = pinLogoFrames()
+    for i = 1, n do
+        local f = pinLogoCands[i]
+        if f and f.IsShown and f:IsShown() then
+            local l, t = f:GetLeft(), f:GetTop()
+            if l and t then
+                local dx, dy = l - left, top - t
+                if dx >= -6 and dx <= 10 and dy >= -8 and dy <= 240 and dy > drop then
+                    drop = dy
+                end
+            end
+        end
+    end
+    return drop + PINLOGO_SLOT
+end
+
+local function pinLogoArt(bt)
+    local on = pinLogoOn()
+    bt.__on = on
+    if on then
+        bt.icon:SetDesaturated(false)
+        bt.icon:SetVertexColor(1, 1, 1, 1)
+        if bt.dim:IsShown() then bt.dim:Hide() end
+    else
+        bt.icon:SetDesaturated(true)
+        bt.icon:SetVertexColor(0.55, 0.55, 0.55, 1)
+        if not bt.dim:IsShown() then bt.dim:Show() end
+    end
+end
+
+local syncPinLogo
+
+local function pinLogoSet(on)
+    if M.SetPinsHidden then
+        pcall(M.SetPinsHidden, not on)
+    else
+        local db = DungeonsForeverDB
+        if type(db) ~= "table" then return end
+        db.dungeon = db.dungeon or {}
+        db.dungeon.mapPinsHidden = not on
+        if M.SyncPins then pcall(M.SyncPins, M) end
+        if M.SyncWorldQuestPins then pcall(M.SyncWorldQuestPins) end
+    end
+    if syncPinLogo then syncPinLogo() end
+end
+
+local function ensurePinLogo()
+    if W.pinLogo or not WorldMapFrame then return W.pinLogo end
+    local host = pinLogoHost()
+    local bt = CreateFrame("Button", "DungeonsForeverMapPinLogo", WorldMapFrame)
+    bt:SetSize(PINLOGO_SLOT, PINLOGO_SLOT)
+    bt:SetFrameStrata("HIGH")
+    local hl = (host and host.GetFrameLevel and host:GetFrameLevel()) or 0
+    bt:SetFrameLevel(hl + 20)
+    bt.bg = bt:CreateTexture(nil, "BACKGROUND", nil, -1)
+    bt.bg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
+    bt.bg:SetSize(25, 25)
+    bt.bg:SetPoint("TOPLEFT", 2, -4)
+    bt.icon = bt:CreateTexture(nil, "ARTWORK")
+    bt.icon:SetTexture(PINLOGO_TEX)
+    bt.icon:SetSize(22, 22)
+    bt.icon:SetPoint("TOPLEFT", 6, -5)
+    bt.dim = bt:CreateTexture(nil, "OVERLAY")
+    bt.dim:SetColorTexture(0, 0, 0, 0.4)
+    bt.dim:SetPoint("TOPLEFT", bt.icon, "TOPLEFT")
+    bt.dim:SetPoint("BOTTOMRIGHT", bt.icon, "BOTTOMRIGHT")
+    bt.dim:Hide()
+    bt.ring = bt:CreateTexture(nil, "OVERLAY", nil, 1)
+    bt.ring:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+    bt.ring:SetSize(54, 54)
+    bt.ring:SetPoint("TOPLEFT")
+    bt:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight", "ADD")
+    bt:SetScript("OnEnter", function(self)
+        GameTooltip:ClearLines()
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("|T" .. PINLOGO_TEX .. ":18|t " .. L["无限副本手册"], 1, 0.82, 0, true)
+        GameTooltip:AddLine(L[pinLogoOn() and "左键：隐藏地图图例" or "左键：显示地图图例"], 0.75, 0.75, 0.75, true)
+        GameTooltip:Show()
+    end)
+    bt:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    bt:SetScript("OnClick", function(_, button)
+        if button ~= "LeftButton" then return end
+        pinLogoSet(not pinLogoOn())
+    end)
+    W.pinLogo = bt
+    pinLogoArt(bt)
+    return bt
+end
+
+syncPinLogo = function()
+    local bt = ensurePinLogo()
+    if not bt then return end
+    if not enabled() or W.Active() then
+        if bt:IsShown() then bt:Hide() end
+        return
+    end
+    local host = pinLogoHost()
+    if not host then return end
+    local drop = pinLogoDrop(host)
+    if bt.__drop ~= drop then
+        bt.__drop = drop
+        bt:ClearAllPoints()
+        bt:SetPoint("TOPLEFT", host, "TOPLEFT", PINLOGO_X, -drop)
+    end
+    if bt.__on ~= pinLogoOn() then pinLogoArt(bt) end
+    if not bt:IsShown() then bt:Show() end
+end
+
+W.SyncPinLogo = syncPinLogo
 
 local CRUMB_X = 0
 local CRUMB_PAD = 60
@@ -1932,6 +2176,7 @@ end
 function W.Hide()
     local view = W.view
     if not view then return end
+    cancelRouteJob(view)
     if ns.MapZoom then ns.MapZoom.Reset() end
     if view.routeBtn then view.routeBtn:Hide() end
     if view.pinBtn then view.pinBtn:Hide() end
@@ -2156,14 +2401,6 @@ function W.EntriesIn(mapID)
     return out
 end
 
-local dropDown
-
-local DROP_COL = {
-    rec = { 1, 0.82, 0 },
-    now = { 0.74, 0.80, 0.90 },
-    up = { 0.74, 0.72, 0.68 },
-}
-
 local function dropHex(c)
     return string.format("%02x%02x%02x",
         math.floor(c[1] * 255 + 0.5),
@@ -2174,11 +2411,14 @@ end
 local function dropName(d)
     local full = detailOf(d.id) or d
     local dg = ns.DungeonDG
-    local lv = (type(UnitLevel) == "function") and (UnitLevel("player") or 0) or 0
-    local g = (dg and dg.GroupOf and full.levelMin) and dg.GroupOf(full, lv) or nil
-    local c = g and DROP_COL[g]
-    if not (c and d.name) then return d.name end
-    return "|cff" .. dropHex(c) .. d.name .. "|r"
+    if d.name and dg and dg.DiffColor and full then
+        local lv = (type(UnitLevel) == "function") and (UnitLevel("player") or 0) or 0
+        local r, g, b = dg.DiffColor(full, lv)
+        if r then
+            return "|cff" .. dropHex({ r, g, b }) .. d.name .. "|r"
+        end
+    end
+    return d.name
 end
 
 local function dropdownInit(_, level)
@@ -2748,6 +2988,13 @@ local epSig
 local function driveEntryPins()
     if not (entryProvider and WorldMapFrame) then return end
     if inCombat() then return end
+    if M.PinsHidden and M.PinsHidden() then
+        if epSig ~= "hidden" then
+            epSig = "hidden"
+            entryProvider:RemoveAllData()
+        end
+        return
+    end
     local map = CurMap(nil)
     if not (map and map.GetCanvas) then return end
     local lm = _G.WorldMapFrame
@@ -2773,6 +3020,10 @@ local function driveEntryPins()
 end
 
 W.RefreshPins = driveEntryPins
+W.ResetPins = function()
+    epSig = nil
+    pcall(driveEntryPins)
+end
 
 local leaSupAt = 0
 
@@ -3189,6 +3440,7 @@ end
 local function tick_()
     if not (WorldMapFrame and WorldMapFrame:IsShown()) then return end
     syncOpenWinBtn()
+    syncPinLogo()
     leaSuppressPins()
     driveEntryPins()
     if not W.Active() then syncAreaBtn() end
@@ -3288,6 +3540,7 @@ W.Render = {
     paintArt = paintArt,
     paintArea = paintArea,
     syncRoute = syncRoute,
+    cancelRoute = cancelRouteJob,
     syncPins = syncPins,
     syncBar = syncBar,
     syncButtons = syncButtons,

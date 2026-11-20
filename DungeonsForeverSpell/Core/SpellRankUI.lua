@@ -88,7 +88,7 @@ local function ShowSpellTip(owner, d)
         GameTooltip:AddLine(d.name or L["未知法术"], 1, 1, 1)
     end
     if d.from or d.to then
-        GameTooltip:AddLine((d.from or "?") .. " → " .. (d.to or "?"), ACC[1], ACC[2], ACC[3])
+        GameTooltip:AddLine((d.from or "?") .. (" " .. ns.SYM.arrow .. " ") .. (d.to or "?"), ACC[1], ACC[2], ACC[3])
     end
     if d.slots and #d.slots > 0 then
         local t = {}
@@ -96,7 +96,7 @@ local function ShowSpellTip(owner, d)
             local b = SR.BindFor(d.slots[i])
             t[i] = b and (d.slots[i] .. " (" .. b .. ")") or tostring(d.slots[i])
         end
-        GameTooltip:AddLine(L["槽位"] .. " " .. table.concat(t, "、"), 0.82, 0.86, 0.9, true)
+        GameTooltip:AddLine(L["槽位"] .. " " .. table.concat(t, L["、"]), 0.82, 0.86, 0.9, true)
     elseif d.noBar then
         GameTooltip:AddLine(L["技能书里有，动作条上没有"], 0.82, 0.86, 0.9, true)
     end
@@ -157,15 +157,15 @@ local function SlotText(slots)
         local k = SR.BindFor(slots[i])
         if k then b[#b + 1] = k end
     end
-    local s = L["槽位"] .. " " .. table.concat(a, "、")
-    if #b > 0 then s = s .. " · " .. L["按键"] .. " " .. table.concat(b, "、") end
+    local s = L["槽位"] .. " " .. table.concat(a, L["、"])
+    if #b > 0 then s = s .. " · " .. L["按键"] .. " " .. table.concat(b, L["、"]) end
     return s
 end
 
 local function RankMarkup(from, to)
     local a = from or "?"
     local b = to or "?"
-    return "|cff7f8998" .. a .. "|r  →  |cff46bf72" .. b .. "|r"
+    return "|cff7f8998" .. a .. ("|r  " .. ns.SYM.arrow .. "  |cff46bf72") .. b .. "|r"
 end
 
 local function PaintRow(r, data, mode)
@@ -567,7 +567,7 @@ local function BuildWin()
         setRows[#setRows + 1] = row
         return row
     end
-    MakeSetRow(1, L["新技能时弹窗"], "hintLearn", L["学会新技能、且动作条上有低等级、且不在黑名单时弹窗"])
+    MakeSetRow(1, L["新技能时弹窗"], "hintLearn", L["学会新技能时弹窗（含未放入动作条的新技能）"])
     MakeSetRow(2, L["登录时弹窗"], "hintLogin", L["登录时、且动作条上有低等级、且不在黑名单时弹窗"])
 
     local function SyncSetRows()
@@ -925,9 +925,11 @@ end
 local entry
 local entryHost
 local entryPage
+local entryDirty = false
 local RefreshEntry
 local UpdateEntry
 local UpdateEntryCombat
+local SyncEntryVisibility
 
 local function IsVis(f)
     if not f then return false end
@@ -1002,14 +1004,23 @@ local function FrameStrata(f)
     return "MEDIUM"
 end
 
-local function FrameScaleToUIParent(f)
-    if not (f and f.GetEffectiveScale) then return 1 end
-    local ok, a = pcall(f.GetEffectiveScale, f)
-    local oku, b = pcall(UIParent.GetEffectiveScale, UIParent)
-    if ok and oku and type(a) == "number" and type(b) == "number" and b > 0 then
+local function ScaleInto(host, par)
+    if not (host and par and host.GetEffectiveScale and par.GetEffectiveScale) then return 1 end
+    local ok1, a = pcall(host.GetEffectiveScale, host)
+    local ok2, b = pcall(par.GetEffectiveScale, par)
+    if ok1 and ok2 and type(a) == "number" and type(b) == "number" and b > 0 then
         return a / b
     end
     return 1
+end
+
+local function BookFrame()
+    local nb = ns.NativeSpellBook
+    local b = nb and nb.Book and nb.Book() or nil
+    if b then return b end
+    local psf = PlayerSpellsFrame
+    if psf and psf.SpellBookFrame then return psf.SpellBookFrame end
+    return psf
 end
 
 local function BoxAnchor()
@@ -1061,17 +1072,20 @@ local ENTRY_NAME = "DungeonsForeverSpellRankEntry"
 
 RefreshEntry = function()
     if not entry then return false end
+    if not InCombat() then
+        local want = BookFrame()
+        if want and entry:GetParent() ~= want then entry:SetParent(want) end
+        entry:SetFrameStrata(ENTRY_STRATA)
+    end
     local host = PickHost()
     if host and host ~= entryHost then
         entryHost = host
-        if not InCombat() and entry:GetParent() ~= UIParent then entry:SetParent(UIParent) end
-        if not InCombat() then entry:SetFrameStrata(ENTRY_STRATA) end
-        entry:SetScale(FrameScaleToUIParent(host))
+        entry:SetScale(ScaleInto(host, entry:GetParent() or UIParent))
         AnchorEntry()
         entry:SetFrameLevel(math.max(FrameLvl(host), FrameLvl(AnchorFrame())) + 5)
     end
     if not entryHost then return false end
-    local wantScale = FrameScaleToUIParent(entryHost)
+    local wantScale = ScaleInto(entryHost, entry:GetParent() or UIParent)
     if entry.__sc ~= wantScale then
         entry.__sc = wantScale
         entry:SetScale(wantScale)
@@ -1080,7 +1094,7 @@ RefreshEntry = function()
     local par = entry:GetParent()
     local page = PageNow()
     local box = BoxAnchor()
-    local inBook = (box == nil) or IsVis(box)
+    local inBook = (box == nil) or (page ~= nil) or IsVis(box)
     local vis = IsVis(entryHost) and par ~= nil and IsVis(par) and page == "spell" and inBook
     vis = vis and true or false
     if entry:IsShown() ~= vis then entry:SetShown(vis) end
@@ -1092,7 +1106,7 @@ local ENTRY_TEXT = "法术管理"
 local function PaintEntry(n)
     if not entry then return end
     local txt = L[ENTRY_TEXT]
-    if n and n > 0 then txt = txt .. "（" .. n .. "）" end
+    if n and n > 0 then txt = txt .. L["（"] .. n .. L["）"] end
     entry.label:SetText(txt)
     local ok, w = pcall(entry.label.GetStringWidth, entry.label)
     if ok and type(w) == "number" and w > 0 then
@@ -1112,7 +1126,7 @@ local function EnsureEntry()
     local bt = CreateFrame("Button", ENTRY_NAME, UIParent, "UIPanelButtonTemplate")
     bt:SetSize(320, 32)
     bt:SetFrameStrata(ENTRY_STRATA)
-    bt:SetScale(FrameScaleToUIParent(host))
+    bt:SetScale(ScaleInto(host, UIParent))
     bt:SetFrameLevel(math.max(FrameLvl(host), FrameLvl(BoxAnchor() or PagedFrame())) + 5)
     bt:SetText("")
     local fs = bt:CreateFontString(nil, "OVERLAY")
@@ -1124,7 +1138,7 @@ local function EnsureEntry()
         ns.PlaySound(1)
         UI.Toggle()
     end)
-    if ns.NDuiOn and ns.NDuiOn() then ns.NDuiReskin(bt) end
+    if ns.SkinBtn then ns.SkinBtn(bt) end
     bt:Hide()
     entry = bt
     entryHost = host
@@ -1166,9 +1180,13 @@ UpdateEntry = function()
         entry.__hdr = nil
     end
     RefreshEntry()
+    if entryDirty then
+        entryDirty = false
+        SyncEntryVisibility()
+    end
 end
 
-local function SyncEntryVisibility()
+SyncEntryVisibility = function()
     if not entry then return end
     local psf = PlayerSpellsFrame
     local sb = psf and psf.SpellBookFrame
@@ -1179,7 +1197,7 @@ local function SyncEntryVisibility()
     end
     local page = PageNow()
     local box = BoxAnchor()
-    local inBook = (box == nil) or IsVis(box)
+    local inBook = (box == nil) or (page ~= nil) or IsVis(box)
     local vis = bookVis and IsVis(entryHost) and IsVis(entry:GetParent()) and page == "spell" and inBook
     vis = vis and true or false
     if entry:IsShown() ~= vis then entry:SetShown(vis) end
@@ -1190,7 +1208,7 @@ UpdateEntryCombat = function()
         if entry then entry:Hide() end
         return
     end
-    SyncEntryVisibility()
+    if entry then entryDirty = true end
 end
 
 UI.Refresh = function()
@@ -1281,19 +1299,35 @@ local function Register()
             UpdateEntry()
         end
     end)
-    local acc = 0
+    local acc, idleAcc = 0, 0
+    local lastPsfVis = false
     local tick = CreateFrame("Frame")
     tick:SetScript("OnUpdate", function(_, elapsed)
         acc = acc + elapsed
+        if acc < 0.1 then return end
+        local step = acc
+        acc = 0
         if InCombat() then
-            if acc < 0.1 then return end
-            acc = 0
             UpdateEntryCombat()
             return
         end
-        if acc < 0.5 then return end
-        acc = 0
-        UpdateEntry()
+        local psf = PlayerSpellsFrame
+        local pv = false
+        if psf and psf.IsVisible then
+            local okp, vp = pcall(psf.IsVisible, psf)
+            pv = (okp and vp) and true or false
+        end
+        if pv ~= lastPsfVis then
+            lastPsfVis = pv
+            idleAcc = 0
+            UpdateEntry()
+            return
+        end
+        idleAcc = idleAcc + step
+        if pv or idleAcc >= 0.5 then
+            idleAcc = 0
+            UpdateEntry()
+        end
     end)
     UpdateEntry()
 end

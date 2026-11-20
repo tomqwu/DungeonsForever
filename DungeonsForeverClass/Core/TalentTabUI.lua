@@ -142,27 +142,20 @@ local function plate()
 end
 
 local function NodeTip(btn, tree, nd, p)
-    GameTooltip:SetOwner(btn, "ANCHOR_BOTTOMRIGHT")
-    GameTooltip:ClearLines()
-    local cr, cg, cb = ClassColorOf(UI.cls)
-    GameTooltip:AddLine(nd.n, cr, cg, cb)
-    GameTooltip:AddLine(tree.name .. " · " .. format(L["第%d行第%d列"], nd.row, nd.col), 0.7, 0.75, 0.82)
-    if nd.passive then
-        GameTooltip:AddLine(L["被动"], 0.55, 0.78, 1)
+    local t = tree.__ti or 1
+    local need = 0
+    if p == 0 and not GateOK(t, nd.row) then
+        need = (nd.row - 1) * 5 - TreeSpent(t)
     end
-    local di = math.min(math.max(p, 1), #nd.desc)
-    if nd.desc[di] then
-        GameTooltip:AddLine(nd.desc[di], 0.9, 0.92, 0.96, true)
+    local noPre = false
+    local src = nd.req and tree.nodes and tree.nodes[nd.req]
+    if src then
+        local have = (UI.mock and UI.mock.pts[t] and UI.mock.pts[t][nd.req]) or 0
+        if have < (src.max or 1) then noPre = true end
     end
-    if p > 0 and p < nd.max and nd.desc[p + 1] then
-        GameTooltip:AddLine(format("%s%d：%s", L["下一级"], p + 1, nd.desc[p + 1]), 0.6, 0.65, 0.75, true)
+    if ns.TalentTip then
+        ns.TalentTip(btn, nd, p, tree.name, need, noPre)
     end
-    if p == 0 and not GateOK(tree.__ti, nd.row) then
-        local need = (nd.row - 1) * 5 - TreeSpent(tree.__ti)
-        GameTooltip:AddLine(format(L["需本系再投入 %d 点"], need), 0.95, 0.45, 0.4, true)
-    end
-    GameTooltip:AddLine(L["左键加点 · 右键减点"], 0.5, 0.55, 0.65)
-    GameTooltip:Show()
 end
 
 local function HideTip()
@@ -1056,10 +1049,25 @@ local function TakePlanRow(parent)
     bt.nm = MakeFS(bt, 14, C_TEXT, "LEFT")
     bt.nm:SetPoint("LEFT", bt, "LEFT", 52, 0)
     bt.nm:SetJustifyH("LEFT")
+    bt.nm:SetWordWrap(false)
     bt.vv = MakeFS(bt, 14, C_WHITE, "RIGHT")
     bt.vv:SetPoint("RIGHT", bt, "RIGHT", -4, 0)
     UI.planRowPool[#UI.planRowPool + 1] = bt
     return bt
+end
+
+local function FitPlanName(fs, s, vv, w)
+    local vw = (vv and vv.GetStringWidth and vv:GetStringWidth()) or 24
+    local maxw = w - 52 - vw - 10
+    if maxw < 40 then maxw = 40 end
+    fs:SetWidth(maxw)
+    local DG = Host.DG
+    if DG and DG.FitText then
+        fs.__fullText = s
+        fs:SetText(DG.FitText(s, 14, maxw))
+    else
+        fs:SetText(s)
+    end
 end
 
 local function BuildPlanRows(parent, w)
@@ -1076,18 +1084,20 @@ local function BuildPlanRows(parent, w)
             bt:SetSize(w - 4, ROW_H - 2)
             bt:ClearAllPoints()
             bt:SetPoint("TOPLEFT", parent, "TOPLEFT", 2, -(y))
-            bt.num:SetText("◇")
+            bt.num:SetText(ns.SYM.dia0)
             bt.ic:SetTexture("Interface\\Icons\\" .. op.nd.icon)
             bt.ic:SetDesaturated(true)
             bt.bg = bt.bg or bt:CreateTexture(nil, "BACKGROUND")
             bt.bg:SetAllPoints()
             bt.bg:SetColorTexture(1, 1, 1, 0.03)
             bt.bg:Show()
-            bt.nm:SetWidth(w - 52 - 40)
-            bt.nm:SetText(op.nd.n)
             bt.nm:SetTextColor(0.55, 0.55, 0.55, 1)
             bt.vv:SetText(format(L["方案外 ×%d"], op.rem))
             bt.vv:SetTextColor(0.55, 0.55, 0.55, 1)
+            if (bt.vv:GetStringWidth() or 0) > w - 52 - 60 then
+                bt.vv:SetText(format("×%d", op.rem))
+            end
+            FitPlanName(bt.nm, op.nd.n, bt.vv, w)
             bt:SetScript("OnEnter", nil)
             bt:SetScript("OnLeave", nil)
             bt:SetScript("OnClick", nil)
@@ -1107,8 +1117,6 @@ local function BuildPlanRows(parent, w)
             if bt.bg then bt.bg:Hide() end
             bt.ic:SetDesaturated(false)
             bt.ic:SetTexture("Interface\\Icons\\" .. nd.icon)
-            bt.nm:SetWidth(w - 52 - 40)
-            bt.nm:SetText(nd.n)
             bt.nm:SetTextColor(unpack(C_TEXT))
             if it.over then
                 bt.vv:SetText(L["点不够"])
@@ -1117,6 +1125,7 @@ local function BuildPlanRows(parent, w)
                 bt.vv:SetText(it.rank .. "/" .. nd.max)
                 bt.vv:SetTextColor(unpack(C_WHITE))
             end
+            FitPlanName(bt.nm, nd.n, bt.vv, w)
             bt:SetScript("OnEnter", function()
                 bt.vv:SetTextColor(Unpack(C_GOLD))
                 local node = UI.nodeOf[it.t] and UI.nodeOf[it.t][it.ni]
@@ -1177,12 +1186,12 @@ local function BuildPlanRows(parent, w)
                     ic:SetTexture("Interface\\Icons\\" .. nd.icon)
                     local nm = MakeFS(bt, 14, C_TEXT, "LEFT")
                     nm:SetPoint("LEFT", bt, "LEFT", 52, 0)
-                    nm:SetWidth(w - 52 - 40)
                     nm:SetJustifyH("LEFT")
-                    nm:SetText(nd.n)
+                    nm:SetWordWrap(false)
                     local vv = MakeFS(bt, 14, C_WHITE, "RIGHT")
                     vv:SetPoint("RIGHT", bt, "RIGHT", -4, 0)
                     vv:SetText(k .. "/" .. nd.max)
+                    FitPlanName(nm, nd.n, vv, w)
                     bt:SetScript("OnEnter", function()
                         vv:SetTextColor(Unpack(C_GOLD))
                         local node = UI.nodeOf[t] and UI.nodeOf[t][ni]
@@ -1207,8 +1216,8 @@ end
 
 UpdatePlanRows = function()
     BuildRemainSeq()
-    if UI.plist then
-        BuildPlanRows(UI.plist, PlanW())
+    if UI.plistChild then
+        BuildPlanRows(UI.plistChild, PlanW())
     end
 end
 
@@ -1228,21 +1237,22 @@ PlanMaxOff = function()
     return math.max(0, n * ROW_H - listH)
 end
 RelayoutPlan = function()
-    if not UI.plist then return end
+    local child = UI.plistChild
+    if not (UI.plist and child) then return end
     local pw, listH = PlanListGeom()
     UI.plist:ClearAllPoints()
     UI.plist:SetPoint("TOPLEFT", UI.plates[4], "TOPLEFT", PAD, -PlanListTop())
     UI.plist:SetSize(pw - 2 * PAD, listH)
-    local off = UI.planOff or 0
-    for i, row in ipairs(UI.planRows or {}) do
-        local vy = (i - 1) * ROW_H - off
-        if vy > -ROW_H and vy < listH then
-            row:ClearAllPoints()
-            row:SetPoint("TOPLEFT", UI.plist, "TOPLEFT", 0, -vy)
-            row:Show()
-        else
-            row:Hide()
-        end
+    local total = #(UI.planRows or {}) * ROW_H
+    child:Show()
+    child:SetSize(math.max(1, pw - 2 * PAD), math.max(1, total))
+    local off = math.max(0, math.min(UI.planOff or 0, PlanMaxOff()))
+    UI.planOff = off
+    if UI.plist.UpdateScrollChildRect then pcall(UI.plist.UpdateScrollChildRect, UI.plist) end
+    UI.plist:SetVerticalScroll(off)
+    if math.abs((UI.plist:GetVerticalScroll() or 0) - off) > 0.5 and UI.plist.SetScrollChild then
+        pcall(UI.plist.SetScrollChild, UI.plist, child)
+        UI.plist:SetVerticalScroll(off)
     end
     local track, thumb = UI.planTrack, UI.planThumb
     if track and thumb then
@@ -1329,7 +1339,10 @@ local function Ensure()
     dv:SetPoint("TOPLEFT", p4, "TOPLEFT", PAD, -(HEADER_H - 4))
     dv:SetPoint("TOPRIGHT", p4, "TOPRIGHT", -PAD, -(HEADER_H - 4))
     dv:SetColorTexture(1, 1, 1, 0.10)
-    UI.plist = CreateFrame("Frame", nil, p4)
+    UI.plist = CreateFrame("ScrollFrame", nil, p4)
+    UI.plistChild = CreateFrame("Frame", nil, UI.plist)
+    UI.plistChild:SetSize(1, 1)
+    if UI.plist.SetScrollChild then UI.plist:SetScrollChild(UI.plistChild) end
     UI.plist:EnableMouseWheel(true)
     UI.plist:SetScript("OnMouseWheel", function(_, delta)
         local maxOff = PlanMaxOff()
@@ -1603,8 +1616,8 @@ Rebuild = function()
     ResetNodes()
     UI.nodeOf = nil
     UI.planRows = nil
-    if UI.plist then
-        for _, f in ipairs({ UI.plist:GetChildren() }) do f:Hide() end
+    if UI.plistChild then
+        for _, f in ipairs({ UI.plistChild:GetChildren() }) do f:Hide() end
     end
     if not data then
         for i = 1, 4 do UI.plates[i]:Show() end
