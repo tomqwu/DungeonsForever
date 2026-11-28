@@ -1,7 +1,6 @@
 local ns = _G.DF_NS or {}
 
-if (type(GetLocale) ~= "function") or GetLocale() ~= "enUS" then return end
-local _, ns = ...
+if (type(DF_Locale) ~= "function") or DF_Locale() ~= "enUS" then return end
 
 ns.ExploreToys = {
     [1] = {

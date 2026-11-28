@@ -1420,8 +1420,20 @@ do
 
     local menuPopup = nil
     local menuOwner = nil
+    local subPopup = nil
+    local subOwner = nil
+
+    local function HideSubDFMenu()
+        if subPopup then
+            subPopup:Hide()
+            subPopup:SetParent(nil)
+        end
+        subPopup = nil
+        subOwner = nil
+    end
 
     local function HideDFMenu()
+        HideSubDFMenu()
         if menuPopup then
             menuPopup:Hide()
             menuPopup:SetParent(nil)
@@ -1451,6 +1463,7 @@ do
     MENU_EV:SetScript("OnEvent", function()
         if not (menuPopup and menuPopup:IsShown()) then return end
         if menuPopup:IsMouseOver() then return end
+        if subPopup and subPopup:IsShown() and subPopup:IsMouseOver() then return end
         if menuOwner and menuOwner.IsMouseOver and menuOwner:IsMouseOver() then return end
         HideDFMenu()
     end)
@@ -1459,26 +1472,12 @@ do
         HideDFMenu()
     end
 
-    function ns.hui.ShowMenu(items, opts)
-        if type(items) ~= "table" or #items == 0 then return end
-        opts = opts or {}
-        if menuPopup and menuPopup:IsShown() and opts.owner and opts.owner == menuOwner then
-            HideDFMenu()
-            return
-        end
-        if menuPopup then
-            menuPopup:Hide()
-            menuPopup:SetParent(nil)
-            menuPopup = nil
-        end
-        menuOwner = opts.owner
-
+    local function BuildMenu(items, opts)
         local popup = CreateFrame("Frame", nil, UIParent)
         popup:SetFrameStrata("FULLSCREEN_DIALOG")
         popup:SetToplevel(true)
         popup:SetClampedToScreen(true)
         popup:EnableMouse(true)
-        menuPopup = popup
 
         local rowH = 24
         local fsSz = tonumber(opts.fs) or 14
@@ -1500,6 +1499,7 @@ do
             if it.swatch then w = w + 14 + 7 end
             if it.icon then w = w + (it.iconSize or iconSz) + iconGap end
             if it.checked ~= nil then w = w + chkSz + chkGap end
+            if it.sub then w = w + 24 end
             if w > maxW then maxW = w end
         end
         maxW = math.max(120, math.min(maxW + 6, 360))
@@ -1597,12 +1597,34 @@ do
                 HideDFMenu()
                 if type(fn) == "function" then fn() end
             end)
+            if it.sub then
+                local more = CreateFrame("Button", nil, row)
+                more:SetSize(24, rowH)
+                more:SetPoint("RIGHT", row, "RIGHT", -1, 0)
+                local mfs = more:CreateFontString(nil, "OVERLAY")
+                mfs:SetFont(ns.FONT, fsSz + 5, "")
+                mfs:SetPoint("CENTER", more, "CENTER", 0, 1)
+                mfs:SetText("›")
+                mfs:SetTextColor(cr, cg, cb, ca)
+                local sub = it.sub
+                more:SetScript("OnClick", function()
+                    if type(sub) == "function" then sub() end
+                end)
+                local mh = more:CreateTexture(nil, "BACKGROUND")
+                mh:SetAllPoints()
+                mh:SetColorTexture(0, 0, 0, 0)
+                more:SetScript("OnEnter", function() mh:SetColorTexture(L5[1], L5[2], L5[3], 1) end)
+                more:SetScript("OnLeave", function() mh:SetColorTexture(0, 0, 0, 0) end)
+            end
         end
 
         ns.hui.SkinPopup(popup, 8, "both", ns.hui.layer.L0)
 
         local scale = UIParent:GetEffectiveScale()
-        if opts.anchor and opts.anchor.IsObjectType and opts.anchor:IsObjectType("Frame") then
+        if opts.rightOf and opts.rightOf.IsObjectType and opts.rightOf:IsObjectType("Frame") then
+            popup:ClearAllPoints()
+            popup:SetPoint("TOPLEFT", opts.rightOf, "TOPRIGHT", 4, 0)
+        elseif opts.anchor and opts.anchor.IsObjectType and opts.anchor:IsObjectType("Frame") then
             popup:ClearAllPoints()
             if opts.up then
                 popup:SetPoint("BOTTOMLEFT", opts.anchor, "TOPLEFT", 0, 4)
@@ -1615,6 +1637,37 @@ do
             popup:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", cx / scale + 2, cy / scale - 4)
         end
         popup:Show()
+        return popup
+    end
+
+    function ns.hui.ShowMenu(items, opts)
+        if type(items) ~= "table" or #items == 0 then return end
+        opts = opts or {}
+        if menuPopup and menuPopup:IsShown() and opts.owner and opts.owner == menuOwner then
+            HideDFMenu()
+            return
+        end
+        HideDFMenu()
+        menuOwner = opts.owner
+        menuPopup = BuildMenu(items, opts)
+    end
+
+    function ns.hui.ShowSubMenu(items, opts)
+        if type(items) ~= "table" or #items == 0 then return end
+        opts = opts or {}
+        if subPopup and subPopup:IsShown() and opts.owner and opts.owner == subOwner then
+            HideSubDFMenu()
+            return
+        end
+        HideSubDFMenu()
+        subOwner = opts.owner
+        local keep = opts
+        keep.rightOf = menuPopup
+        subPopup = BuildMenu(items, keep)
+    end
+
+    function ns.hui.HideSubMenu()
+        HideSubDFMenu()
     end
 
     function ns.hui.AttachContentPanel(page, anchor, topInset, bottomInset, sideInset)
@@ -2237,325 +2290,6 @@ do
                 f:SetTextColor(c[1], c[2], c[3])
             end
         end
-    end
-
-    local tooltipSkins = {}
-
-    local EXT_SKIN_PROBES = {
-        function()
-            local nd = _G.NDui
-            if type(nd) ~= "table" then return false end
-            local c = nd[2]
-            local skins = type(c) == "table" and c.db and c.db.Skins
-            if type(skins) == "table" and skins.Tooltips == false then return false end
-            return true
-        end,
-        function()
-            return type(_G.ElvUI) == "table"
-        end,
-    }
-
-    local extTipCache = false
-    local extTipScanT = 0
-    local function ExtTipSkin()
-        local now = GetTime and GetTime() or 0
-        if now - extTipScanT < 0.5 then return extTipCache end
-        extTipScanT = now
-        local hit = false
-        for _, probe in ipairs(EXT_SKIN_PROBES) do
-            if probe() then
-                hit = true
-                break
-            end
-        end
-        extTipCache = hit
-        return hit
-    end
-    ns.hui.ExternalTipSkin = ExtTipSkin
-
-    local function IsOwnedFrame(f)
-        if not f or not f.GetName then return false end
-        local ok, name = pcall(f.GetName, f)
-        if not ok or not name then return false end
-        return name:sub(1, 15) == "DungeonsForever"
-    end
-
-    local function TooltipOwnerIsMine(tt)
-        if not tt or not tt.GetOwner then return false end
-        local ok, owner = pcall(tt.GetOwner, tt)
-        if not ok or not owner then return false end
-        local roots = ns.hui.__ttRoots
-        local f = owner
-        while f and f ~= UIParent do
-            if IsOwnedFrame(f) then return true end
-            if roots and roots[f] then return true end
-            f = f.GetParent and f:GetParent() or nil
-        end
-        if f == UIParent and (IsOwnedFrame(owner) or (roots and roots[owner])) then return true end
-        return false
-    end
-
-    function ns.hui.RegisterTooltipRoot(f)
-        if not f then return end
-        ns.hui.__ttRoots = ns.hui.__ttRoots or {}
-        ns.hui.__ttRoots[f] = true
-    end
-
-    local function AddonLoaded(name)
-        local fn = IsAddOnLoaded
-        if type(fn) ~= "function" then return false end
-        local ok, loaded = pcall(fn, name)
-        return ok and loaded and true or false
-    end
-
-    local ttItemMark = {}
-    function ns.hui.MarkTipItem(tt, on)
-        if tt then ttItemMark[tt] = on and true or nil end
-    end
-    do
-        hooksecurefunc(GameTooltip, "SetOwner", function(tt) ttItemMark[tt] = nil end)
-        hooksecurefunc(GameTooltip, "SetHyperlink", function(tt) ttItemMark[tt] = true end)
-    end
-
-    local function TooltipHasItemContent(tt)
-        if ttItemMark[tt] then return true end
-        local fn = tt and tt.GetItem
-        if type(fn) ~= "function" then return false end
-        local ok, _, link = pcall(fn, tt)
-        return ok and link ~= nil
-    end
-
-    local function CollectForeign(root)
-        local list = {}
-        local seen = { [root] = true }
-        local q = { root }
-        local i = 1
-        while i <= #q do
-            local f = q[i]
-            i = i + 1
-            for _, c in ipairs({ f:GetChildren() }) do
-                if not seen[c] then
-                    seen[c] = true
-                    q[#q + 1] = c
-                end
-            end
-            for _, r in ipairs({ f:GetRegions() }) do
-                if r.IsObjectType and r:IsObjectType("Texture") and not r.__huiPiece then
-                    list[#list + 1] = { r, r:IsShown() }
-                end
-            end
-        end
-        return list
-    end
-    local tipApplying = false
-    local function ApplyTooltipSkinBody(tt, on)
-        local s = tooltipSkins[tt]
-        if not s then return end
-        s.on = on
-        local FILL = ns.hui.layer.L3 or ns.hui.layer.L2 or ns.hui.layer.L1
-        for _, tex in ipairs(s.fill) do
-            tex:SetShown(on)
-            if on then
-                tex:SetVertexColor(FILL[1], FILL[2], FILL[3])
-                tex:SetAlpha(FILL[4])
-            end
-        end
-        for _, tex in ipairs(s.border) do tex:SetShown(on) end
-        for _, tex in ipairs(s.shadow) do
-            tex:SetShown(on)
-            if on and s.shadowA then tex:SetAlpha(s.shadowA) end
-        end
-        if on then
-            for _, e in ipairs(s.nineTex) do
-                if e[2] then e[1]:SetShown(false) end
-            end
-            if tt.NineSlice then tt.NineSlice:SetAlpha(0) end
-        else
-            if tt.NineSlice then tt.NineSlice:SetAlpha(s.nineAlpha or 1) end
-            for _, e in ipairs(s.nineTex or {}) do e[1]:SetShown(e[2]) end
-        end
-    end
-    function ns.hui.TipWantsNative(tt)
-        local s = tt and tooltipSkins[tt]
-        local want = ns.hui.nativeTipOwner
-        if want and tt and type(tt.GetOwner) == "function" then
-            local ok, own = pcall(tt.GetOwner, tt)
-            if ok and own and own == want then
-                ns.hui.nativeTipOwner = nil
-                if s then s.nativeHold = true end
-                return true
-            end
-        end
-        return (s and s.nativeHold) and true or false
-    end
-
-    local function ApplyTooltipSkin(tt, on)
-        local s = tt and tooltipSkins[tt]
-        if not s then return end
-        if ExtTipSkin() then
-            s.on = false
-            for _, tex in ipairs(s.fill) do tex:SetShown(false) end
-            for _, tex in ipairs(s.border) do tex:SetShown(false) end
-            for _, tex in ipairs(s.shadow) do tex:SetShown(false) end
-            return
-        end
-        if ns.hui.TipWantsNative(tt) then on = false end
-        s.on = on
-        if tipApplying then return end
-        tipApplying = true
-        pcall(ApplyTooltipSkinBody, tt, on)
-        tipApplying = false
-    end
-
-    function ns.hui.ShowNativeTip(tt)
-        local s = tt and tooltipSkins[tt]
-        if not s then return false end
-        s.nativeHold = true
-        ApplyTooltipSkin(tt, false)
-        return true
-    end
-
-    local function UnskinItemTooltip(tt)
-        ttItemMark[tt] = true
-        local s2 = tooltipSkins[tt]
-        if s2 and s2.on then ApplyTooltipSkin(tt, false) end
-    end
-
-    local itemPostCallDone = false
-    local function HookItemUnskin(tt)
-        if tt.HasScript then
-            local ok, has = pcall(tt.HasScript, tt, "OnTooltipSetItem")
-            if ok and has then
-                if pcall(tt.HookScript, tt, "OnTooltipSetItem", function() UnskinItemTooltip(tt) end) then return end
-            end
-        end
-        if itemPostCallDone then return end
-        if not (TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall) then return end
-        local td = Enum and Enum.TooltipDataType
-        if not (td and td.Item ~= nil) then return end
-        itemPostCallDone = true
-        pcall(TooltipDataProcessor.AddTooltipPostCall, td.Item, UnskinItemTooltip)
-    end
-
-    function ns.hui.SkinGameTooltip(tt)
-        if not tt or tt.__huiSkinned then return end
-        tt.__huiSkinned = true
-        local FILL = ns.hui.layer.L3 or ns.hui.layer.L2 or ns.hui.layer.L1
-        local EDGE = ns.hui.layer.L5 or ns.hui.layer.DIV
-        local s = {
-            fill = BuildRoundedBG(tt, 8, FILL, "both"),
-            border = ns.hui.BuildRoundBorder(tt, 8, EDGE) or {},
-            shadow = BuildCardShadow(tt, 16, 0.6, -8, 8) or {},
-            shadowA = 0.6,
-            ownScoped = true,
-        }
-        for _, tex in ipairs(s.shadow) do
-            tex.__huiPiece = true
-            tex.__huiShadowPiece = true
-            tex:Hide()
-        end
-        s.nineAlpha = tt.NineSlice and tt.NineSlice:GetAlpha() or 1
-        s.nineTex = {}
-        for _, tex in ipairs(s.fill) do
-            tex.__huiPiece = true
-            tex:Hide()
-        end
-        for _, tex in ipairs(s.border) do
-            tex.__huiPiece = true
-            tex:Hide()
-        end
-        tooltipSkins[tt] = s
-        hooksecurefunc(GameTooltip, "SetOwner", function(tt)
-            local s2 = tooltipSkins[tt]
-            if ns.hui.TipWantsNative(tt) then
-                ApplyTooltipSkin(tt, false)
-                return
-            end
-            if s2 then
-                if s2.on then ApplyTooltipSkin(tt, false) end
-                s2.on = nil
-            end
-        end)
-        tt:HookScript("OnUpdate", function(f)
-            if ExtTipSkin() then return end
-            local s2 = tooltipSkins[f]
-            if not (s2 and s2.on) then return end
-            if ns.hui.TipWantsNative(f) then return end
-            local now = GetTime and GetTime() or 0
-            if now - (s2.scanT or 0) < 0.2 then return end
-            s2.scanT = now
-            for _, e in ipairs(CollectForeign(f)) do
-                if e[2] and e[1]:IsShown() then
-                    e[1]:SetShown(false)
-                    s2.nineTex[#s2.nineTex + 1] = e
-                end
-            end
-            if f.NineSlice and f.NineSlice.GetAlpha and f.NineSlice:GetAlpha() ~= 0 then f.NineSlice:SetAlpha(0) end
-        end)
-        tt:HookScript("OnHide", function(f)
-            if not s.nativeHold then return end
-            s.nativeHold = nil
-            ns.hui.nativeTipOwner = nil
-            s.on = nil
-            ApplyTooltipSkin(f, ns.huiTheme == "hui")
-            s.on = nil
-        end)
-        tt:HookScript("OnShow", function()
-            if ExtTipSkin() then return end
-            if ns.hui.TipWantsNative(tt) then
-                ApplyTooltipSkin(tt, false)
-                return
-            end
-            if not s.snapDone then
-                s.snapDone = true
-                s.nineTex = CollectForeign(tt)
-            end
-            local on = ns.huiTheme == "hui"
-            if on and s.ownScoped then
-                on = TooltipOwnerIsMine(tt)
-                if on and TooltipHasItemContent(tt) then on = false end
-            end
-            if on ~= s.on then ApplyTooltipSkin(tt, on) end
-        end)
-        HookItemUnskin(tt)
-        ApplyTooltipSkin(tt, false)
-    end
-
-    function ns.hui.RefreshGameTooltipSkin()
-        if not ns.hui.__tooltipStyleHooked then
-            ns.hui.__tooltipStyleHooked = true
-            if SharedTooltip_SetBackdropStyle then
-                hooksecurefunc("SharedTooltip_SetBackdropStyle", function(tooltip)
-                    local s = tooltip and tooltipSkins[tooltip]
-                    if s and s.on then ApplyTooltipSkin(tooltip, true) end
-                end)
-            end
-        end
-        local themeOn = ns.huiTheme == "hui" and not ExtTipSkin()
-        for tt, s in pairs(tooltipSkins) do
-            local on = themeOn
-            if s.ownScoped then
-                if tt:IsShown() then
-                    on = on and TooltipOwnerIsMine(tt) and not TooltipHasItemContent(tt)
-                else
-                    on = false
-                end
-            end
-            if s.on ~= on then ApplyTooltipSkin(tt, on) end
-        end
-    end
-
-    pcall(ns.hui.SkinGameTooltip, GameTooltip)
-    pcall(ns.hui.SkinGameTooltip, ItemRefTooltip)
-    pcall(ns.hui.RefreshGameTooltipSkin)
-    do
-        local f = CreateFrame("Frame")
-        f:RegisterEvent("PLAYER_LOGIN")
-        f:SetScript("OnEvent", function()
-            C_Timer.After(0, function()
-                ns.hui.RefreshGameTooltipSkin()
-            end)
-        end)
     end
 
     local HUI_EDIT_BORDER_NORMAL = {0.30, 0.30, 0.28, 0.85}

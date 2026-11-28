@@ -18,6 +18,7 @@ _G.DF_NS = ns
 ns.huiTheme = "hui"
 
 ns.CONTENT_TOP = 46
+ns.UpdateVer = "2.1.90"
 
 ns.SET_ICON = "Interface\\AddOns\\DungeonsForever\\Media\\textures\\DF_Settings"
 ns.SET_ICON_IDLE = { 0.55, 0.62, 0.70 }
@@ -44,6 +45,7 @@ ns.MODULES = {
     { key = "Factions",    addon = "DungeonsForeverFaction", sv = "DungeonsForeverFactionDB", legacy = { "factions" }, label = "声望", probe = "FactionModule" },
     { key = "PvP",         addon = "DungeonsForeverPvP",     sv = nil, legacy = nil, label = "PvP", probe = "PvPModule" },
     { key = "Spell",       addon = "DungeonsForeverSpell",   sv = "DungeonsForeverSpellDB", legacy = nil, label = "技能书", probe = "NativeSpellBook" },
+    { key = "QuestSearch", addon = "DungeonsForeverQuest",   sv = nil, legacy = nil, label = "搜索", probe = "QuestSearchModule", gate = "questie" },
 }
 
 ns.MODULE_BY_TAB = {}
@@ -65,11 +67,43 @@ function ns.AddonLoaded(name)
     return false
 end
 
+function ns.QuestieOn()
+    if not (ns.AddonLoaded("Questie") and ns.AddonLoaded("QuestieDB")) then return false end
+    local ql = _G.QuestieLoader
+    local m = type(ql) == "table" and ql._modules
+    return type(m) == "table" and type(m.QuestieDB) == "table"
+end
+
+function ns.ModuleGateOK(tabKey)
+    local m = ns.MODULE_BY_TAB[tabKey]
+    if not m or not m.gate then return true end
+    if m.gate == "questie" then return ns.QuestieOn() end
+    return true
+end
+
 function ns.ModuleOn(tabKey)
     local m = ns.MODULE_BY_TAB[tabKey]
     if not m then return true end
+    if not ns.ModuleGateOK(tabKey) then return false end
     if m.probe and ns[m.probe] ~= nil then return true end
     return ns.AddonLoaded(m.addon)
+end
+
+function ns.QuestSearchDownText()
+    local L = ns.L
+    if not ns.AddonLoaded("DungeonsForeverQuest") then
+        return L["无法跳转到搜索：搜索模块（DungeonsForeverQuest）未启用，请在插件列表中启用后再试"]
+    end
+    if not ns.QuestieOn() then
+        return L["无法跳转到搜索：本功能依赖 Questie 任务插件（含 QuestieDB），请安装并启用后再试"]
+    end
+    return L["搜索模块未启用，暂时无法跳转"]
+end
+
+function ns.NotifySearchDown()
+    local t = ns.QuestSearchDownText()
+    if ns.ShowTopToast then ns.ShowTopToast(t) end
+    return t
 end
 
 function ns.ModuleDesc(tabKey)
@@ -129,12 +163,15 @@ ns.options = ns.options or {}
 if ns.options.buttonSound == nil then ns.options.buttonSound = true end
 
 ns.QUICK_VER = 1
-ns.QUICK_GROUPS = { "dungeon", "prof", "explore" }
+ns.QUICK_GROUPS = { "dungeon", "prof", "explore", "tier" }
 ns.QUICK_EXPLORE = { "books", "bag" }
-ns.QUICK_TABS = { "Dungeons", "Raids", "Professions", "Explore", "Collections", "Factions", "Bis", "Tier", "PvP", "Gear" }
+ns.QUICK_TIER = { "class", "bis", "prep" }
+ns.QUICK_TABS = { "Dungeons", "Raids", "Professions", "Explore", "Collections", "Factions", "Bis", "Tier", "PvP", "Gear", "QuestSearch" }
 
 local QUICK_EXPLORE_SET = {}
 for _, k in ipairs(ns.QUICK_EXPLORE) do QUICK_EXPLORE_SET[k] = true end
+local QUICK_TIER_SET = {}
+for _, k in ipairs(ns.QUICK_TIER) do QUICK_TIER_SET[k] = true end
 
 function ns.QuickCfg()
     local ui = DB().ui
@@ -149,12 +186,20 @@ function ns.QuickCfg()
         if q.groups[k] == nil then q.groups[k] = true end
     end
     if q.profMode ~= "all" then q.profMode = "learned" end
+    if q.profCrate == nil then q.profCrate = true end
     if type(q.expl) ~= "table" then q.expl = {} end
     for _, k in ipairs(ns.QUICK_EXPLORE) do
         if q.expl[k] == nil then q.expl[k] = true end
     end
     for k in pairs(q.expl) do
         if not QUICK_EXPLORE_SET[k] then q.expl[k] = nil end
+    end
+    if type(q.tier) ~= "table" then q.tier = {} end
+    for _, k in ipairs(ns.QUICK_TIER) do
+        if q.tier[k] == nil then q.tier[k] = true end
+    end
+    for k in pairs(q.tier) do
+        if not QUICK_TIER_SET[k] then q.tier[k] = nil end
     end
     if type(q.tabs) ~= "table" then q.tabs = {} end
     for _, k in ipairs(ns.QUICK_TABS) do
@@ -380,13 +425,16 @@ end
 
 do
     local candidates = {}
-    if GetLocale() == "zhCN" then
+    local loc = DF_Locale()
+    if loc == "zhCN" then
         candidates[#candidates + 1] = "ARHei.ttf"
     end
-    for _, name in ipairs({
+    -- 非中文界面不选中文字体：其拉丁字母是等宽粗糙字形，改用游戏默认字体。
+    -- Non-Chinese UI: skip CJK fonts (their Latin glyphs look poor); use the game's default font.
+    for _, name in ipairs((loc == "zhCN" or loc == "zhTW") and {
         "ARKai_T.ttf", "ARHei.ttf", "ARKai_C.ttf",
         "bLEI00D.TTF", "bHEI00M.TTF", "bKAI00M.TTF", "arheiuhk_bd.TTF",
-    }) do
+    } or {}) do
         candidates[#candidates + 1] = name
     end
     local probe = UIParent:CreateFontString()
@@ -407,6 +455,141 @@ do
         ns.FONT = STANDARD_TEXT_FONT
     end
     ns.FONT = ns.FONT or "Fonts\\FRIZQT__.TTF"
+end
+
+do
+    -- 非中文客户端没有 ARKai/ARHei 等中文字体：SetFont 不报错只返回 false，字串会空白或成方块。
+    -- Non-CJK clients ship no ARKai/ARHei: probe once per path and fall back to ns.FONT.
+    local ok_cache = {}
+    local L0 = DF_Locale()
+    local CJK_UI = (L0 == "zhCN" or L0 == "zhTW")
+    function ns.SafeFont(path)
+        if type(path) ~= "string" or not CJK_UI then return ns.FONT end
+        local hit = ok_cache[path]
+        if hit == nil then
+            local probe = UIParent:CreateFontString()
+            probe:Hide()
+            local ok, res = pcall(probe.SetFont, probe, path, 12, "")
+            hit = (ok and res ~= false and probe:GetFont() ~= nil) and true or false
+            ok_cache[path] = hit
+        end
+        return hit and path or ns.FONT
+    end
+end
+
+do
+    -- 符号字形：游戏英文字体没有 ★☆●→①… 等字形（显示为方块）。中文界面原样，其他界面换成贴图或 ASCII。
+    -- Symbol glyphs: the English game font lacks ★☆●→① etc. (renders as boxes).
+    -- Chinese UI keeps them; other UIs get inline textures or ASCII stand-ins.
+    local l0 = DF_Locale()
+    local cjk = (l0 == "zhCN" or l0 == "zhTW")
+    local STAR = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:0|t"
+    local STAR0 = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:0:0:0:0:64:64:0:64:0:64:120:120:120|t"
+    local MAP = cjk and {} or {
+        ["★"] = STAR, ["☆"] = STAR0, ["●"] = "\226\128\162", ["○"] = "o", ["◆"] = "\226\128\162", ["◇"] = "o",
+        ["▽"] = "v", ["▼"] = "v", ["▲"] = "^", ["↑"] = "^", ["↓"] = "v", ["→"] = "->", ["←"] = "<-",
+        ["≈"] = "~", ["≥"] = ">=", ["≤"] = "<=", ["└"] = "-", ["✓"] = "+", ["✔"] = "+",
+        ["①"] = "1.", ["②"] = "2.", ["③"] = "3.", ["④"] = "4.", ["⑤"] = "5.", ["⑥"] = "6.", ["⑦"] = "7.",
+        ["⑧"] = "8.", ["⑨"] = "9.", ["⑩"] = "10.",
+        ["「"] = "\"", ["」"] = "\"", ["『"] = "\"", ["』"] = "\"", ["【"] = "[", ["】"] = "]", ["\227\128\128"] = " ",
+    }
+    ns.SYM = {
+        star = cjk and "★" or STAR, star0 = cjk and "☆" or STAR0,
+        dot = cjk and "●" or "\226\128\162", arrow = cjk and "→" or "->",
+        approx = cjk and "≈" or "~", ge = cjk and "≥" or ">=",
+        dia = cjk and "◆" or "\226\128\162", dia0 = cjk and "◇" or "o", tri = cjk and "▽" or "v",
+        n = cjk and { "①", "②", "③", "④", "⑤", "⑥", "⑦" } or { "1.", "2.", "3.", "4.", "5.", "6.", "7." },
+    }
+    -- 非中文界面：英文词更长，部分固定宽度布局需要放宽
+    -- Non-Chinese UI: English labels run longer, so some fixed-width layouts widen
+    ns.WIDE_UI = not cjk
+
+    -- 文字超出给定宽度时先缩小字号（最小 minSize），仍放不下则截断为省略号
+    -- Shrink a FontString's font (down to minSize) until it fits maxW; truncate with "..." as a last resort
+    function ns.FitFS(fs, maxW, minSize)
+        if not (fs and fs.GetStringWidth and maxW and maxW > 0) then return end
+        local path, size, flags = fs:GetFont()
+        if not path or not size then return end
+        fs.__fitBase = fs.__fitBase or size
+        size = fs.__fitBase
+        if fs:GetFont() ~= nil then pcall(fs.SetFont, fs, path, size, flags or "") end
+        local floor = minSize or math.max(9, size - 3)
+        while (fs:GetStringWidth() or 0) > maxW and size > floor do
+            size = size - 1
+            pcall(fs.SetFont, fs, path, size, flags or "")
+        end
+        if (fs:GetStringWidth() or 0) > maxW then
+            fs:SetWidth(maxW)
+            if fs.SetWordWrap then fs:SetWordWrap(false) end
+        end
+    end
+
+    -- 记录被截断前的完整文字，供悬停提示使用 / remember the full text before it gets shortened, for the hover tooltip
+    function ns.FullText(fs, s)
+        if fs then fs.__fullText = s end
+        return true
+    end
+
+    -- 悬停在被截断的文字上时，用提示框显示完整内容（只在没有其他提示框时）
+    -- Hovering truncated text shows the full text in a tooltip (only when no other tooltip is up)
+    local function TruncatedUnderMouse(frame)
+        local regions = { frame:GetRegions() }
+        if frame.GetFontString and frame:GetFontString() then regions[#regions + 1] = frame:GetFontString() end
+        for _, r in ipairs(regions) do
+            if r.GetObjectType and r:GetObjectType() == "FontString" and r:IsVisible()
+                and (not r.IsMouseOver or r:IsMouseOver()) then
+                local shown = r:GetText()
+                local full = r.__fullText
+                if type(full) == "string" and full ~= "" and full ~= shown then return full end
+                if shown and shown ~= "" and r.IsTruncated and r:IsTruncated() then return shown end
+            end
+        end
+    end
+    local function InWindow(frame)
+        local root = ns.MainFrame
+        local p = frame
+        for _ = 1, 30 do
+            if not p then return false end
+            if p == root then return true end
+            p = p.GetParent and p:GetParent()
+        end
+        return false
+    end
+    local watch = CreateFrame("Frame")
+    local acc, owner = 0, nil
+    watch:SetScript("OnUpdate", function(_, el)
+        acc = acc + el
+        if acc < 0.15 then return end
+        acc = 0
+        local root = ns.MainFrame
+        if not (root and root:IsShown()) then return end
+        local focus
+        if GetMouseFoci then focus = (GetMouseFoci() or {})[1] elseif GetMouseFocus then focus = GetMouseFocus() end
+        if owner and focus ~= owner then
+            if GameTooltip:GetOwner() == owner and GameTooltip.__dfTrunc then
+                GameTooltip.__dfTrunc = nil
+                GameTooltip:Hide()
+            end
+            owner = nil
+        end
+        if not focus or focus == owner or focus == WorldFrame or not InWindow(focus) then return end
+        if GameTooltip:IsShown() then return end
+        local ok, full = pcall(TruncatedUnderMouse, focus)
+        if ok and full then
+            owner = focus
+            GameTooltip:SetOwner(focus, "ANCHOR_TOP")
+            GameTooltip:SetText(full, 1, 1, 1, 1, true)
+            GameTooltip.__dfTrunc = true
+            GameTooltip:Show()
+        end
+    end)
+
+    -- 把字串里的符号换成当前界面能显示的形式（中文界面原样返回）
+    -- Replace symbols in a string with displayable forms (no-op on Chinese UI)
+    function ns.Sym(s)
+        if cjk or type(s) ~= "string" or not s:find("[\226\227]") then return s end
+        return (s:gsub("[\226\227][\128-\191][\128-\191]", MAP))
+    end
 end
 
 do
@@ -480,7 +663,73 @@ do
     end
 end
 
+do
+    local queue, reg, fac = {}, false, nil
+    local MAXQ = 96
+
+    local function Apply(S, it)
+        if not (S and it and it.f) then return end
+        if it.k == "page" then
+            pcall(S.PageButton, it.f, it.c or ">")
+        elseif it.k == "font" then
+            pcall(S.Font, it.f)
+        else
+            pcall(S.Button, it.f)
+        end
+    end
+
+    local function Drain()
+        if not fac then return end
+        for i = 1, #queue do Apply(fac, queue[i]) end
+        queue = {}
+    end
+
+    local function Wait()
+        if reg then return fac ~= nil end
+        local E = _G.EllesmereUI
+        if not (E and E.RegisterSkin) then return false end
+        reg = true
+        E.RegisterSkin("DungeonsForeverButtons", function(S)
+            fac = S
+            Drain()
+        end)
+        return fac ~= nil
+    end
+
+    function ns.EUISkin(frame, kind, ch)
+        if not frame then return frame end
+        if fac then
+            Apply(fac, { f = frame, k = kind, c = ch })
+            return frame
+        end
+        if #queue < MAXQ then queue[#queue + 1] = { f = frame, k = kind, c = ch } end
+        Wait()
+        return frame
+    end
+
+    function ns.SkinBtn(frame)
+        if not frame then return frame end
+        if ns.NDuiOn() then return ns.NDuiReskin(frame) end
+        return ns.EUISkin(frame, "button")
+    end
+
+    function ns.SkinPageBtn(frame, ch)
+        if not frame then return frame end
+        if ns.NDuiOn() then return ns.NDuiReskin(frame) end
+        return ns.EUISkin(frame, "page", ch)
+    end
+
+    local wait = CreateFrame("Frame")
+    wait:RegisterEvent("PLAYER_LOGIN")
+    wait:SetScript("OnEvent", function(self)
+        self:UnregisterEvent("PLAYER_LOGIN")
+        Wait()
+        Drain()
+    end)
+end
+
 local loadedFuncs = {}
+local initsDrained = false
 local boot = CreateFrame("Frame")
 boot:RegisterEvent("ADDON_LOADED")
 boot:SetScript("OnEvent", function(self, event, name)
@@ -488,14 +737,21 @@ boot:SetScript("OnEvent", function(self, event, name)
     if name ~= addonName then return end
     self:UnregisterEvent("ADDON_LOADED")
     DB()
-    for _, fn in ipairs(loadedFuncs) do
+    initsDrained = true
+    local idx = 1
+    local function step()
+        local fn = loadedFuncs[idx]
+        if not fn then return end
+        idx = idx + 1
         local ok, err = xpcall(fn, function(e)
             return tostring(e) .. "\n" .. debugstack(2)
         end)
         if not ok then
             print("|cffff5040[无限副本手册] 初始化回调出错（已跳过，不影响后续模块）：|r\n" .. tostring(err))
         end
+        C_Timer.After(0, step)
     end
+    step()
     end)
 end)
 
@@ -545,14 +801,23 @@ do
         if event == "PLAYER_LOGIN" then self:UnregisterEvent("PLAYER_LOGIN") end
         if event == "PLAYER_ENTERING_WORLD" then self:UnregisterEvent("PLAYER_ENTERING_WORLD") end
         if C_Timer and C_Timer.After then C_Timer.After(0, Try) end
-        if not ticker and C_Timer and C_Timer.NewTicker then ticker = C_Timer.NewTicker(2, Try) end
+        if not ticker and C_Timer and C_Timer.NewTicker then ticker = C_Timer.NewTicker(5, Try) end
     end)
 end
 
 function ns.Init(fn)
-    loadedFuncs[#loadedFuncs + 1] = fn
     local sink = rawget(ns, "__inits")
     if sink then sink[#sink + 1] = fn end
+    if initsDrained then
+        local ok, err = xpcall(fn, function(e)
+            return tostring(e) .. "\n" .. debugstack(2)
+        end)
+        if not ok then
+            print("|cffff5040[无限副本手册] 初始化回调出错（已跳过，不影响后续模块）：|r\n" .. tostring(err))
+        end
+        return
+    end
+    loadedFuncs[#loadedFuncs + 1] = fn
 end
 
 function ns.PlaySound(id)
@@ -652,6 +917,16 @@ function ns.CreateEditBox(parent, size)
     eb:HookScript("OnEscapePressed", function(self) self:ClearFocus() end)
     eb:HookScript("OnEnterPressed", function(self) self:ClearFocus() end)
     return eb
+end
+
+function ns.FocusEdit(e)
+    if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+        C_Timer.After(0, function()
+            if e:IsShown() then e:SetFocus() end
+        end)
+    else
+        e:SetFocus()
+    end
 end
 
 function ns.SkinPopupFont(p)
@@ -1169,24 +1444,67 @@ local function drainLazy(list, label)
     return bad
 end
 
+local gateBoot, gateFrame = {}, CreateFrame("Frame")
+local function drainGateBoot()
+    local list = gateBoot
+    gateBoot = {}
+    for i = 1, #list do
+        local m = list[i]
+        if ns.ModuleWant(m) and not ns.AddonLoaded(m.addon) then
+            if type(C_AddOns) == "table" and C_AddOns.EnableAddOn then pcall(C_AddOns.EnableAddOn, m.addon) end
+            if type(C_AddOns) == "table" and C_AddOns.LoadAddOn then
+                pcall(C_AddOns.LoadAddOn, m.addon)
+            elseif type(LoadAddOn) == "function" then
+                pcall(LoadAddOn, m.addon)
+            end
+        end
+    end
+    if type(ns.RefreshTabEntry) == "function" then pcall(ns.RefreshTabEntry) end
+end
+gateFrame:SetScript("OnEvent", function(self)
+    self:UnregisterAllEvents()
+    if type(C_Timer) == "table" and C_Timer.After then
+        C_Timer.After(1, drainGateBoot)
+    else
+        drainGateBoot()
+    end
+end)
+
 local moduleBoot = CreateFrame("Frame")
 moduleBoot:RegisterEvent("ADDON_LOADED")
 moduleBoot:SetScript("OnEvent", function(self, event, name)
     if name ~= "DungeonsForever" then return end
     self:UnregisterEvent("ADDON_LOADED")
+    local boom = function(m)
+        if type(C_AddOns) == "table" and C_AddOns.EnableAddOn then pcall(C_AddOns.EnableAddOn, m.addon) end
+        if type(C_AddOns) == "table" and C_AddOns.LoadAddOn then
+            pcall(C_AddOns.LoadAddOn, m.addon)
+        elseif type(LoadAddOn) == "function" then
+            pcall(LoadAddOn, m.addon)
+        end
+    end
     for _, m in ipairs(ns.MODULES) do
         local want = ns.ModuleWant(m)
         if want then
             if not ns.AddonLoaded(m.addon) then
-                if type(C_AddOns) == "table" and C_AddOns.EnableAddOn then pcall(C_AddOns.EnableAddOn, m.addon) end
-                if type(C_AddOns) == "table" and C_AddOns.LoadAddOn then
-                    pcall(C_AddOns.LoadAddOn, m.addon)
-                elseif type(LoadAddOn) == "function" then
-                    pcall(LoadAddOn, m.addon)
+                if m.gate then
+                    gateBoot[#gateBoot + 1] = m
+                else
+                    boom(m)
                 end
             end
         elseif type(C_AddOns) == "table" and C_AddOns.DisableAddOn then
             pcall(C_AddOns.DisableAddOn, m.addon)
+        end
+    end
+    if #gateBoot > 0 then
+        gateFrame:RegisterEvent("PLAYER_LOGIN")
+        if type(IsLoggedIn) == "function" and IsLoggedIn() then
+            if type(C_Timer) == "table" and C_Timer.After then
+                C_Timer.After(1, drainGateBoot)
+            else
+                drainGateBoot()
+            end
         end
     end
     local bad = drainLazy(_G.DF_PROF_LAZY, "专业模块")
@@ -1197,3 +1515,86 @@ moduleBoot:SetScript("OnEvent", function(self, event, name)
         DEFAULT_CHAT_FRAME:AddMessage("|cffff5555DungeonsForever|r 有 " .. bad .. " 项页面模块初始化失败，请检查对应子插件是否已启用。")
     end
 end)
+
+do
+    local LINE2SLUG = {
+        [171] = "alchemy", [164] = "blacksmithing", [333] = "enchanting",
+        [202] = "engineering", [165] = "leatherworking", [197] = "tailoring",
+        [186] = "mining", [182] = "herbalism", [393] = "skinning",
+        [185] = "cooking", [356] = "fishing", [129] = "first-aid",
+        [755] = "jewelcrafting",
+    }
+    local memo, stamp = nil, -1
+
+    function ns.PlayerProfSet()
+        local now = (type(GetTime) == "function") and GetTime() or 0
+        if memo and (now - stamp) < 1 then return memo end
+        local out = {}
+        if type(GetProfessions) == "function" and type(GetProfessionInfo) == "function" then
+            local ok, a, b, c, d, e, f = pcall(GetProfessions)
+            if ok then
+                local slots = { a, b, c, d, e, f }
+                for i = 1, 6 do
+                    local idx = slots[i]
+                    if idx then
+                        local oki, _, _, cur, _, _, _, sid = pcall(GetProfessionInfo, idx)
+                        local slug = oki and LINE2SLUG[sid] or nil
+                        if slug then out[slug] = tonumber(cur) or 0 end
+                    end
+                end
+            else
+                out.__unknown = true
+            end
+        else
+            out.__unknown = true
+        end
+        memo, stamp = out, now
+        return out
+    end
+
+    function ns.HasProf(slug)
+        if not slug then return true end
+        local set = ns.PlayerProfSet()
+        if set.__unknown then return true end
+        return set[slug] ~= nil
+    end
+
+    function ns.ProfLevel(slug)
+        if not slug then return 0 end
+        return ns.PlayerProfSet()[slug] or 0
+    end
+
+    local ev = CreateFrame("Frame")
+    ev:RegisterEvent("SKILL_LINES_CHANGED")
+    ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+    ev:SetScript("OnEvent", function() memo, stamp = nil, -1 end)
+end
+
+function ns.RefreshTabEntry()
+    if type(ns.ApplyTabVisibility) == "function" then pcall(ns.ApplyTabVisibility) end
+end
+
+do
+    local seen, tries = nil, 0
+    local function Check()
+        tries = tries + 1
+        local on = ns.QuestieOn()
+        if seen == nil then seen = on end
+        if on ~= seen then
+            seen = on
+            ns.RefreshTabEntry()
+        end
+        if not on and tries < 10 and C_Timer and C_Timer.After then
+            C_Timer.After(0.7, Check)
+        end
+    end
+
+    local ev = CreateFrame("Frame")
+    ev:RegisterEvent("ADDON_LOADED")
+    ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+    ev:SetScript("OnEvent", function(_, event, name)
+        if event == "ADDON_LOADED" and name ~= "Questie" and name ~= "QuestieDB" then return end
+        tries = 0
+        if C_Timer and C_Timer.After then C_Timer.After(0.2, Check) end
+    end)
+end

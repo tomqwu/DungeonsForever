@@ -1,6 +1,6 @@
 local _, ns = ...
 
-if (type(GetLocale) ~= "function") or GetLocale() ~= "enUS" then return end
+if (type(DF_Locale) ~= "function") or DF_Locale() ~= "enUS" then return end
 local _, ns = ...
 
 ns.DungeonEntry = {
@@ -21,6 +21,8 @@ ns.DungeonEntry = {
     ["gnomeregan"] = { 1426, 24.4, 39.8, "Dun Morogh" },
     ["sunken_temple"] = { 1435, 69.5, 52.5, "Swamp of Sorrows" },
     ["the_deadmines"] = { 1436, 42.5, 71.7, "Westfall" },
+    ["the_drowned_city"] = { 1434, 21.5, 27.7, "Stranglethorn Vale" },
+    ["kroldok_stronghold"] = { 2548, 37.5, 37.9, "Riverglades" },
     ["excavation_wetlands"] = { 1437, 47.8, 56.3, "Wetlands" },
     ["blackfathom_deeps"] = { 1440, 14.1, 13.1, "Ashenvale" },
     ["maraudon"] = { 1443, 29.1, 62.5, "Desolace" },
@@ -28,10 +30,16 @@ ns.DungeonEntry = {
     ["dire_maul_north"] = { 1444, 62.5, 24.9, "Feralas" },
     ["dire_maul_east"] = { 1444, 64.8, 30.2, "Feralas" },
     ["onyxias_lair"] = { 1445, 52.3, 76.1, "Dustwallow Marsh" },
+    ["alcaz_prison"] = { 1445, 75.3, 14.1, "Dustwallow Marsh" },
     ["zul_farrak"] = { 1446, 38.7, 20.0, "Tanaris" },
+    ["blackmaw_hold"] = { 1447, 38.6, 33.2, "Azshara" },
+    ["shapers_terrace"] = { 1449, 48.1, 6.1, "Un'Goro Crater" },
     ["the_stockade"] = { 1453, 50.4, 66.4, "Stormwind City" },
     ["ragefire_chasm"] = { 1454, 51.5, 49.7, "Orgrimmar" },
     ["hall_of_thanes"] = { 1455, 28.2, 47.7, "Ironforge" },
+    ["blackrock_depths"] = { 1427, 45.6, 89.4, "Searing Gorge" },
+    ["lower_blackrock_spire"] = { 1428, 33.0, 25.2, "Burning Steppes" },
+    ["upper_blackrock_spire"] = { 1428, 33.0, 25.2, "Burning Steppes" },
 }
 
 ns.DungeonEntryRoute = {

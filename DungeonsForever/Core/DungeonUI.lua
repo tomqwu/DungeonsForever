@@ -41,6 +41,38 @@ local function DB()
     return s
 end
 
+local function CharKey()
+    local n = UnitName("player") or "?"
+    local realm
+    if UnitFullName then
+        local _, r = UnitFullName("player")
+        realm = r
+    end
+    if realm == nil or realm == "" then
+        if GetNormalizedRealmName then realm = GetNormalizedRealmName() end
+        if realm == nil or realm == "" then
+            realm = GetRealmName and GetRealmName() or "?"
+        end
+    end
+    return n .. "-" .. realm
+end
+
+local function ItemDoneSaved(qid)
+    local t = DB().charItemDone
+    if type(t) ~= "table" then return false end
+    local mine = t[CharKey()]
+    if type(mine) ~= "table" then return false end
+    return mine[qid] == true
+end
+
+local function SaveItemDone(qid)
+    local s = DB()
+    if type(s.charItemDone) ~= "table" then s.charItemDone = {} end
+    local key = CharKey()
+    if type(s.charItemDone[key]) ~= "table" then s.charItemDone[key] = {} end
+    s.charItemDone[key][qid] = true
+end
+
 local function IsHui()
     return ns.huiTheme == "hui"
 end
@@ -59,9 +91,10 @@ local function Unpack(c)
     return c[1], c[2], c[3]
 end
 
-local function MakeFS(parent, size, color, justify)
+local function MakeFS(parent, size, color, justify, outline)
     local fs = parent:CreateFontString(nil, "OVERLAY")
-    fs:SetFont(Fnt(size))
+    local face, sz, flags = Fnt(size)
+    fs:SetFont(face, sz, outline or flags)
     if color then fs:SetTextColor(Unpack(color)) end
     if justify then fs:SetJustifyH(justify) end
     return fs
@@ -81,6 +114,20 @@ local function FSH(fs, dflt)
     local t = fs and fs.GetText and fs:GetText()
     if type(t) == "string" and #t > 0 then return 14 end
     return dflt or 14
+end
+
+local function FitName(fs)
+    if not (fs and fs.SetFont and fs.GetWidth) then return end
+    local mw = fs:GetWidth()
+    if type(mw) ~= "number" or mw <= 0 then return end
+    local face, _, flags = Fnt(14)
+    fs:SetFont(face, 14, flags)
+    if FSW(fs) <= mw then return end
+    for s = 13, 11, -1 do
+        local f2, _, g2 = Fnt(s)
+        fs:SetFont(f2, s, g2)
+        if FSW(fs) <= mw then return end
+    end
 end
 
 local function NewButton(parent, text, w, h, size)
@@ -357,8 +404,202 @@ DG.CHILD_W = CONTENT_W - PAGE_INSET * 2
 DG.CARD_W = math.floor((DG.CHILD_W - DG.GUTTER * 2 - (DG.CARD_COLS - 1) * DG.CARD_GAP) / DG.CARD_COLS)
 DG.CARD_GLOW_K = { 0.16, 0.12, 0.09, 0.06, 0.04, 0.02 }
 DG.CARD_STROKE = false
+DG.CARD_TEXT_OUTLINE = "OUTLINE"
 DG.CARD_MASK = "Interface\\AddOns\\DungeonsForever\\Media\\Common\\DFCardMaskRect"
 DG.CARD_SHADE = { { 1, 0.22, 0.78, 0.82, 0.92 } }
+DG.HERE_BREATH = 2.2
+DG.HERE_TAG_H = 15
+DG.HERE_TAG_FS = 11
+DG.HERE_TAG_W = 58
+
+local hereCards = {}
+local hereTicker
+local hereJob
+
+local function HereKey(s)
+    if type(s) ~= "string" then return nil end
+    local t = s:gsub("[%s%p]", "")
+    if t == "" then return nil end
+    return t:lower()
+end
+
+local HERE_SUB
+local function HereSubIndex()
+    if HERE_SUB then return HERE_SUB end
+    local out = {}
+    local src = ns.SubzoneWing
+    if type(src) ~= "table" then
+        HERE_SUB = out
+        return out
+    end
+    for iid, row in pairs(src) do
+        if type(row) == "table" then
+            local m = {}
+            for k, slug in pairs(row) do
+                local kk = HereKey(k)
+                if kk and type(slug) == "string" and m[kk] == nil then m[kk] = slug end
+            end
+            out[tonumber(iid) or iid] = m
+        end
+    end
+    HERE_SUB = out
+    return out
+end
+
+function DG.HereSlug()
+    if type(GetInstanceInfo) ~= "function" then return nil end
+    local ok, nm, itype, _, _, _, _, _, iid = pcall(GetInstanceInfo)
+    if not ok then return nil end
+    iid = tonumber(iid)
+    local inside = (type(itype) == "string" and itype ~= "none") or (iid and iid > 0) or false
+    if not inside and type(IsInInstance) == "function" then
+        local ok2, a, b = pcall(IsInInstance)
+        if ok2 and b then inside = a and true or false end
+    end
+    if not inside then return nil end
+    local sub
+    if type(GetSubZoneText) == "function" then
+        local ok3, v = pcall(GetSubZoneText)
+        if ok3 and type(v) == "string" and v ~= "" then sub = v end
+    end
+    local sk = HereKey(sub)
+    local row = iid and HereSubIndex()[iid] or nil
+    if sk and row and row[sk] then return row[sk] end
+    local IM = ns.InstanceMap
+    local one = (iid and IM and type(IM.inst) == "table") and IM.inst[iid] or nil
+    if type(one) == "string" then return one end
+    local list = ns.DungeonData and ns.DungeonData.dungeons
+    if type(list) ~= "table" then return nil end
+    local cands = {}
+    local k1 = HereKey(nm)
+    if k1 then cands[#cands + 1] = k1 end
+    if type(GetRealZoneText) == "function" then
+        local ok4, z = pcall(GetRealZoneText)
+        local k2 = ok4 and HereKey(z) or nil
+        if k2 and k2 ~= k1 then cands[#cands + 1] = k2 end
+    end
+    for i = 1, #cands do
+        local k = cands[i]
+        for j = 1, #list do
+            local d = list[j]
+            if HereKey(d.name) == k or HereKey(d.nameEn) == k then return d.id end
+        end
+    end
+    return nil
+end
+
+local function HereRing(card, a)
+    local ring = card.__hereRing
+    if not ring then return end
+    for i = 1, #ring do
+        local t = ring[i]
+        if t then t:SetAlpha(a) end
+    end
+end
+
+local function HereClear()
+    for i = 1, #hereCards do HereRing(hereCards[i], 0) end
+    for i = #hereCards, 1, -1 do hereCards[i] = nil end
+end
+
+local function HereStop()
+    if hereTicker then
+        hereTicker:Cancel()
+        hereTicker = nil
+    end
+end
+
+local function HereStep()
+    local sc = U.dungeonListScroll
+    if not (sc and sc:IsShown()) then
+        HereClear()
+        HereStop()
+        return
+    end
+    local a = 0.34 + 0.66 * (0.5 + 0.5 * math.sin(GetTime() * (2 * math.pi / DG.HERE_BREATH)))
+    for i = #hereCards, 1, -1 do
+        local c = hereCards[i]
+        if not (c and c.__hereOn) then
+            HereRing(c, 0)
+            table.remove(hereCards, i)
+        else
+            HereRing(c, c.__hovOn and 0 or a)
+        end
+    end
+    if #hereCards == 0 then HereStop() end
+end
+
+function DG.HereRescan()
+    for i = #hereCards, 1, -1 do hereCards[i] = nil end
+    local pool = U.dungeonListPool
+    if pool then
+        for i = 1, #pool.card do
+            local c = pool.card[i]
+            if c.__active and c.__hereOn then hereCards[#hereCards + 1] = c end
+        end
+    end
+    if #hereCards == 0 then
+        HereStop()
+        return
+    end
+    if not hereTicker and C_Timer and C_Timer.NewTicker then
+        hereTicker = C_Timer.NewTicker(0.05, HereStep)
+    end
+end
+
+function DG.PaintHere(card, on)
+    if not card then return end
+    on = on and true or false
+    card.__hereOn = on
+    local d = card.__d
+    local isNew = (d and d.isNew) and true or false
+    if card.badge then card.badge:SetShown((isNew and not on) and true or false) end
+    local tag = card.hereTag
+    local placed = false
+    if tag then
+        if on then
+            local ac = (ns.hui and ns.hui.ACCENT) or { 0.27, 0.75, 0.45 }
+            if ns.hui and ns.hui.PaintSolidChip then
+                ns.hui.PaintSolidChip(tag, L["当前所在"], ac, nil, DG.HERE_TAG_FS)
+            end
+            tag:ClearAllPoints()
+            tag:SetPoint("TOPRIGHT", card, "TOPRIGHT", -5, -4)
+            tag:Show()
+            local tw = tonumber(tag:GetWidth()) or 0
+            if tw < 20 then tw = DG.HERE_TAG_W end
+            if card.name then
+                card.name:SetPoint("RIGHT", card, "RIGHT", -(tw + 8), 0)
+            end
+            placed = true
+        else
+            tag:Hide()
+        end
+    end
+    if not placed and card.name then
+        card.name:SetPoint("RIGHT", card, "RIGHT", isNew and -24 or -8, 0)
+    end
+    HereRing(card, 0)
+end
+
+function DG.HereZoneChanged()
+    if hereJob then hereJob:Cancel() end
+    hereJob = C_Timer.After(0.6, function()
+        hereJob = nil
+        local sc = U.dungeonListScroll
+        if sc and sc:IsShown() then DG.BuildList() end
+    end)
+end
+
+local function HereRegister()
+    local ev = CreateFrame("Frame")
+    ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+    ev:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+    ev:RegisterEvent("ZONE_CHANGED")
+    ev:SetScript("OnEvent", function() DG.HereZoneChanged() end)
+    DG.__hereEvt = ev
+end
+
+if ns.Init then ns.Init(HereRegister) end
 
 local function CardRoundTex(tex)
     if not (tex and tex.AddMaskTexture) then return end
@@ -469,17 +710,42 @@ function DG.NewCard(parent)
     else
         card.plate:SetColorTexture(0, 0, 0, 0.55)
     end
-    card.name = MakeFS(card, 16, C_WHITE, "LEFT")
+    card.name = MakeFS(card, 16, C_WHITE, "LEFT", DG.CARD_TEXT_OUTLINE)
     card.name:SetPoint("TOPLEFT", card, "TOPLEFT", 8, -5)
     card.name:SetWordWrap(false)
-    card.meta = MakeFS(card, 14, C_GREY, "LEFT")
+    card.name:SetShadowColor(0, 0, 0, 1)
+    card.name:SetShadowOffset(1, -1)
+    card.meta = MakeFS(card, 14, C_GREY, "LEFT", DG.CARD_TEXT_OUTLINE)
     card.meta:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 8, 3)
     card.meta:SetShadowColor(0, 0, 0, 1)
     card.meta:SetShadowOffset(1, -1)
-    card.badge = MakeFS(card, 14, { 0.42, 0.94, 0.62 }, "RIGHT")
+    card.badge = MakeFS(card, 14, { 0.42, 0.94, 0.62 }, "RIGHT", DG.CARD_TEXT_OUTLINE)
     card.badge:SetPoint("TOPRIGHT", card, "TOPRIGHT", -7, -4)
+    card.badge:SetShadowColor(0, 0, 0, 1)
+    card.badge:SetShadowOffset(1, -1)
     card.badge:SetText(L["新"])
     card.__hovOn = false
+    if IsHui() and ns.hui then
+        if ns.hui.MakeSolidChip then
+            card.hereTag = ns.hui.MakeSolidChip(card, nil, DG.HERE_TAG_H)
+            if card.hereTag.t then
+                card.hereTag.t:SetFont(ns.FONT, DG.HERE_TAG_FS, DG.CARD_TEXT_OUTLINE)
+                card.hereTag.t.__chipFs = DG.HERE_TAG_FS
+            end
+            card.hereTag:Hide()
+        end
+        if rounded and ns.hui.BuildRoundBorder then
+            local ac = ns.hui.ACCENT
+            if ac then
+                local ring = ns.hui.BuildRoundBorder(card, 6, { ac[1], ac[2], ac[3], 1 },
+                    card, "OVERLAY", "both", 1)
+                if ring then
+                    for i = 1, #ring do ring[i]:SetAlpha(0) end
+                    card.__hereRing = ring
+                end
+            end
+        end
+    end
     card:SetScript("OnEnter", function(self)
         self.__hovOn = true
         CardEdge(self, 1, 1, 1, 0.9)
@@ -512,6 +778,25 @@ function DG.GroupOf(d, lv)
     return "now"
 end
 
+local function questDiffColor(qlv, lv)
+    local ok, c = pcall(GetQuestDifficultyColor, qlv)
+    if ok and type(c) == "table" and c.r then return c.r, c.g, c.b end
+    local dlt = qlv - lv
+    if dlt >= 3 then return 1, 0.3, 0.25 end
+    if dlt >= -2 then return 1, 0.82, 0 end
+    if dlt >= -5 then return 0.25, 0.78, 0.27 end
+    return 0.6, 0.6, 0.6
+end
+
+function DG.DiffColor(d, lv)
+    local lo, hi = d and d.levelMin, d and d.levelMax
+    if type(lo) ~= "number" or lo <= 0 then return nil end
+    lv = lv or 0
+    if lv < lo then return questDiffColor(lo, lv) end
+    if hi and lv > hi then return questDiffColor(hi, lv) end
+    return 0.25, 0.78, 0.27
+end
+
 function DG.NameHit(d, q)
     if q == "" then return true end
     if d.name and string.find(string.lower(d.name), q, 1, true) then return true end
@@ -526,6 +811,7 @@ function DG.BuildList()
 
     local lv = UnitLevel("player") or 0
     U.dungeonListLevel = lv
+    local hereSlug = DG.HereSlug()
     local q = string.lower(U.dungeonSearchText or "")
 
     local cols, gx = DG.CARD_COLS, DG.CARD_GAP
@@ -686,6 +972,7 @@ function DG.BuildList()
                 CardEdge(card, e[1], e[2], e[3], e[4])
             end
             card:Show()
+            DG.PaintHere(card, hereSlug and d.id == hereSlug)
         end
 
             local rows = math.ceil(#list / cols)
@@ -695,6 +982,7 @@ function DG.BuildList()
 
     for i = nCard + 1, #pool.card do
         pool.card[i].__active = false
+        DG.PaintHere(pool.card[i], false)
         pool.card[i]:Hide()
     end
     for i = nHdr + 1, #pool.hdr do
@@ -708,6 +996,7 @@ function DG.BuildList()
     end
     child:SetHeight(math.max(10, -y + 10))
     DG.CullListRows(true)
+    DG.HereRescan()
 end
 
 function DG.CullListRows(force)
@@ -908,7 +1197,14 @@ function DG.BuildDungeons()
         self:SetVerticalScroll(math.max(0, math.min(maxScroll, self:GetVerticalScroll() - delta * 48)))
         DG.CullListRows()
     end)
-    listScroll:HookScript("OnShow", function() DG.CullListRows(true) end)
+    listScroll:HookScript("OnShow", function()
+        DG.CullListRows(true)
+        DG.HereRescan()
+    end)
+    listScroll:HookScript("OnHide", function()
+        for i = #hereCards, 1, -1 do hereCards[i] = nil end
+        HereStop()
+    end)
     listScroll:HookScript("OnVerticalScroll", function() DG.CullListRows() end)
     U.dungeonListScroll = listScroll
 
@@ -1220,8 +1516,8 @@ function DG.Gate.Begin(n)
                 local fps = L0.__dt and L0.__dt > 0 and math.floor(1000 / L0.__dt) or -1
                 local pct = DG.Gate.total > 0 and math.floor(DG.Gate.done / DG.Gate.total * 100 + 0.5) or 0
                 local msg = "|cff46bf72[无限副本手册] 载入中|r "
-                    .. DG.Gate.done .. "/" .. DG.Gate.total .. "（" .. pct .. "%）"
-                    .. " fps～" .. tostring(fps)
+                    .. DG.Gate.done .. "/" .. DG.Gate.total .. L["（"] .. pct .. L["%）"]
+                    .. L[" fps～"] .. tostring(fps)
                     .. " 切片～" .. (L0.__sliceMs and math.floor(L0.__sliceMs * 10) / 10 or "?") .. "ms"
                     .. " 预算～" .. math.floor(L0.CurCap(DG.Gate.total - DG.Gate.done)) .. "ms"
                 print(msg)
@@ -1287,7 +1583,7 @@ if type(SlashCmdList) == "table" then
                 end
             end
             local msg = "|cff46bf72[无限副本手册] 载入诊断|r"
-                .. " fps～" .. tostring(fps)
+                .. L[" fps～"] .. tostring(fps)
                 .. " 切片～" .. (L0.__sliceMs and math.floor(L0.__sliceMs * 10) / 10 or "?") .. "ms"
                 .. " 预算～" .. math.floor(L0.CurCap(DG.Gate.total - DG.Gate.done)) .. "ms"
                 .. " 进度～" .. tostring(DG.Gate.done) .. "/" .. tostring(DG.Gate.total)
@@ -1355,12 +1651,12 @@ if type(SlashCmdList) == "table" then
         if DG.LOADER_PRESETS[k] then
             DG.Loader.SetBudget(k)
             print("|cff46bf72[无限副本手册]|r " .. L["载入速度"] .. " = "
-                  .. (DG.LOADER_LABEL[k] or k) .. "（" .. math.floor(DG.Loader.CurCap()) .. "ms/帧）")
+                  .. (DG.LOADER_LABEL[k] or k) .. L["（"] .. math.floor(DG.Loader.CurCap()) .. "ms/帧）")
             return
         end
-        print("|cff46bf72[无限副本手册]|r " .. L["载入速度"] .. "："
+        print("|cff46bf72[无限副本手册]|r " .. L["载入速度"] .. L["："]
               .. L["省电"] .. " / " .. L["标准"] .. " / " .. L["激进"]
-              .. "（" .. L["当前"] .. " = " .. (DG.LOADER_LABEL[DG.Loader.preset] or "standard") .. "）")
+              .. L["（"] .. L["当前"] .. " = " .. (DG.LOADER_LABEL[DG.Loader.preset] or "standard") .. L["）"])
     end
 end
 
@@ -1484,7 +1780,7 @@ if type(SlashCmdList) == "table" then
         local pool = U.dungeonDetailPool
         local n = (pool and pool.item) and #pool.item or 0
         print("|cff46bf72[无限副本手册]|r " .. L["载入速度"] .. " = "
-              .. (DG.LOADER_LABEL[DG.Loader.preset] or DG.Loader.preset) .. "（" .. math.floor(DG.Loader.CurCap()) .. "ms/帧）")
+              .. (DG.LOADER_LABEL[DG.Loader.preset] or DG.Loader.preset) .. L["（"] .. math.floor(DG.Loader.CurCap()) .. "ms/帧）")
         print("  " .. L["进度条"] .. " " .. DG.Gate.done .. "/" .. DG.Gate.total
               .. " · " .. L["待建行"] .. " " .. #DG.__pendRows
               .. " · " .. L["行池"] .. " " .. n)
@@ -1746,8 +2042,17 @@ function DG.EnsureCardPool()
     U.cardPoolBuilt = true
     pool.card = {}
     local maxG = 0
+    local per = DG.LOOT_CARD_ITEMS_MAX
     for _, srcs in pairs(ns.DungeonLoot or {}) do
-        local n = #srcs
+        local n = 0
+        for _, s in ipairs(srcs) do
+            local cnt = #(s[5] or {})
+            if DG.IsTrashSrc(s) and cnt > per then
+                n = n + math.ceil(cnt / per)
+            else
+                n = n + 1
+            end
+        end
         if n > maxG then maxG = n end
     end
     DG.LOOT_CARD_MAX = math.max(maxG, 6)
@@ -1761,6 +2066,39 @@ DG.Q_OV_DONE = { 0.25, 0.85, 0.35, 1 }
 DG.Q_OV_READY = { 0.15, 0.82, 0.78, 1 }
 DG.Q_OV_ACT = { 1, 0.82, 0, 1 }
 DG.Q_OV_TODO = { 0.55, 0.55, 0.55, 1 }
+DG.Q_OV_REP = { 0.62, 0.50, 0.86, 1 }
+function DG.QuestRepeat(id)
+    local t = ns.DungeonQuestRepeat
+    if not t or not id then return false end
+    return t[id] == true
+end
+function DG.QuestBadgeState(id)
+    local st = DG.QuestState(id)
+    if st == "todo" and DG.QuestRepeat(id) then return "rep" end
+    return st
+end
+function DG.QuestPreLocked(id)
+    if not id then return nil end
+    local row = DG.ExtQuestRow(id) or DG.QuestRowByID(id)
+    local pre = row and row[9]
+    if type(pre) ~= "table" then return nil end
+    pre = DG.PreForSide(pre, DG.ViewSide())
+    if type(pre) ~= "table" then return nil end
+    for i = 1, #pre do
+        local pid = pre[i]
+        if type(pid) == "number" and not DG.IsOptPre(id, pid) and DG.QuestState(pid) ~= "done" then
+            return pid
+        end
+    end
+    return nil
+end
+function DG.QStateColor(s)
+    if s == "done" then return C_GREEN end
+    if s == "ready" then return DG.Q_OV_READY end
+    if s == "active" then return C_GOLD end
+    if s == "rep" then return DG.Q_OV_REP end
+    return C_GREY
+end
 
 function DG.EnsureQuestLane()
     if U.questLaneBuilt then return end
@@ -1926,13 +2264,48 @@ function DG.EnsureQuestLane()
         self:SetScript("OnUpdate", nil)
     end)
     U.dungeonQDetPool = {
-        lab = {}, kv = {}, txt = {}, node = {}, chip = {}, npc = {}, jump = {},
-        fLab = {}, fTxt = {}, fLink = {}, fNum = {},
+        lab = {}, kv = {}, txt = {}, node = {}, chip = {}, npc = {}, jump = {}, badge = {},
+        spawn = {}, fLab = {}, fTxt = {}, fLink = {}, fNum = {},
     }
     U.dungeonQDetName = MakeFS(qdchild, 16, C_GOLD, "LEFT")
     U.dungeonQDetName:SetWordWrap(false)
     U.dungeonQDetName:SetWidth(DG.Q_DET_W - 8)
     U.dungeonQDetSt = MakeFS(qdchild, 14, C_GREY, "LEFT")
+    do
+        local sb = NewButton(qdchild, L["跳转搜索"], 88, 24, 14)
+        local tw = sb:GetFontString() and sb:GetFontString():GetStringWidth() or 0
+        if type(tw) ~= "number" or tw <= 0 then tw = 56 end
+        sb:SetWidth(tw + 18)
+        sb:EnableMouseWheel(true)
+        sb:SetScript("OnMouseWheel", function(_, delta)
+            DG.WheelScroll(U.dungeonQDet, U.dungeonQDetChild, delta)
+        end)
+        sb:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:ClearLines()
+            GameTooltip:AddLine(L["在搜索模块中查看这个任务"], 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        sb:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        sb:SetScript("OnClick", function(self)
+            local qid = self.__qid
+            if not qid then return end
+            if ns.ModuleOn and not ns.ModuleOn("QuestSearch") then
+                if ns.NotifySearchDown then ns.NotifySearchDown() end
+                return
+            end
+            if ns.PlaySound then ns.PlaySound(1) end
+            ns.OpenPage("QuestSearch")
+            local QS = ns.QuestSearchModule
+            if QS and QS.OpenAt then
+                local qn = DG.QuestName and DG.QuestName(qid)
+                if type(qn) ~= "string" or qn == "" then qn = tostring(qid) end
+                QS.OpenAt(qid, "quest", qn)
+            end
+        end)
+        sb:Hide()
+        U.dungeonQDetSearch = sb
+    end
 
     local function questPlate()
         local p = CreateFrame("Frame", nil, detail, "BackdropTemplate")
@@ -2056,7 +2429,7 @@ function DG.EnsureQuestLane()
         if IsShiftKeyDown() then
             sf:SetHorizontalScroll(sf:GetHorizontalScroll() - step)
         else
-            sf:SetVerticalScroll(sf:GetVerticalScroll() + step)
+            sf:SetVerticalScroll(sf:GetVerticalScroll() - step)
         end
         clampScroll()
     end
@@ -2203,6 +2576,7 @@ function DG.EnsureQuestLane()
         { "Interface\\AddOns\\DungeonsForever\\Media\\Common\\CheckDisc", DG.Q_OV_READY, "Interface\\AddOns\\DungeonsForever\\Media\\icon\\QUEST\\QMarkTurnIn", { 0.020, 0.180, 0.172 }, DG.Q_OV_READY, L["完成未上交"] },
         { "Interface\\AddOns\\DungeonsForever\\Media\\Common\\CheckDisc", DG.Q_OV_ACT, "Interface\\AddOns\\DungeonsForever\\Media\\icon\\QUEST\\QMarkAsk", { 0.227, 0.165, 0 }, DG.Q_OV_ACT, L["已接取"] },
         { "Interface\\AddOns\\DungeonsForever\\Media\\Common\\CheckDisc", DG.Q_OV_TODO, "Interface\\AddOns\\DungeonsForever\\Media\\icon\\QUEST\\QMarkExcl", { 0.102, 0.102, 0.102 }, DG.Q_OV_TODO, L["未接取"] },
+        { "Interface\\AddOns\\DungeonsForever\\Media\\Common\\CheckDisc", DG.Q_OV_REP, "Interface\\AddOns\\DungeonsForever\\Media\\icon\\QUEST\\QMarkAsk", { 0.18, 0.14, 0.26 }, DG.Q_OV_REP, L["可重复"] },
     }
     local legf = CreateFrame("Frame", nil, card)
     legf:SetFrameLevel(sf:GetFrameLevel() + 10)
@@ -2348,11 +2722,23 @@ function DG.PaintQuestOverview(d)
     local list = DG.QuestList(d)
     DG.PrefetchQuestData(list)
     local side = U.dungeonQSide
-    if side == "A" or side == "H" then
+    do
         local fl = {}
         for i = 1, #list do
             local q = list[i]
-            if q[2] == side or not q[2] then fl[#fl + 1] = q end
+            if not DG.IsOptQuest(q[1])
+                and (not (side == "A" or side == "H") or q[2] == side or not q[2]) then
+                fl[#fl + 1] = q
+            end
+        end
+        list = fl
+    end
+    local takeOnly = (ns.MapModule and ns.MapModule.QuestTakeableOnly and ns.MapModule.QuestTakeableOnly()) and true or false
+    if takeOnly then
+        local fl = {}
+        for i = 1, #list do
+            local q = list[i]
+            if DG.QuestTakeable(q[1]) then fl[#fl + 1] = q end
         end
         list = fl
     end
@@ -2362,7 +2748,7 @@ function DG.PaintQuestOverview(d)
     local parentsAll = {}
     for i = 1, #list do
         local q = list[i]
-        local pres = q[9]
+        local pres = DG.PreForSide(q[9], side)
         if type(pres) == "table" then
             local ps = {}
             parentsAll[q[1]] = ps
@@ -2437,6 +2823,55 @@ function DG.PaintQuestOverview(d)
         end
         colOrder = flatOrder
     end
+    do
+        local colUsed, colOut, skipSub
+        local function pushCol(r)
+            if not r then return end
+            local m = subMainOf[r] or r
+            if colUsed[m] then return end
+            colUsed[m] = true
+            colOut[#colOut + 1] = m
+            for _, sr in ipairs(colOrder) do
+                if not colUsed[sr] and subMainOf[sr] == m and not (skipSub and skipSub[sr]) then
+                    colUsed[sr] = true
+                    colOut[#colOut + 1] = sr
+                end
+            end
+        end
+        local function reorder(ids, toTail)
+            if type(ids) ~= "table" or #ids == 0 then return end
+            local head = {}
+            for i = 1, #ids do
+                local pid = ids[i]
+                for _, r in ipairs(colOrder) do
+                    local ch = chains[r]
+                    local has = false
+                    for k = 1, #ch do
+                        if ch[k][1] == pid then has = true break end
+                    end
+                    if has then head[#head + 1] = r break end
+                end
+            end
+            if #head == 0 then return end
+            colUsed, colOut, skipSub = {}, {}, nil
+            if toTail then
+                local tail = {}
+                for i = 1, #head do tail[head[i]] = true end
+                skipSub = tail
+                for _, r in ipairs(colOrder) do
+                    if not tail[subMainOf[r] or r] then pushCol(r) end
+                end
+                skipSub = nil
+                for i = 1, #head do pushCol(head[i]) end
+            else
+                for i = 1, #head do pushCol(head[i]) end
+                for _, r in ipairs(colOrder) do pushCol(r) end
+            end
+            colOrder = colOut
+        end
+        reorder(ns.DungeonQuestColFirst and ns.DungeonQuestColFirst[d.id], false)
+        reorder(ns.DungeonQuestColLast and ns.DungeonQuestColLast[d.id], true)
+    end
     local extRowOf, extNodeOf, subFirstOf = {}, {}, {}
     local extPos, subSrcNode, subRowOf = {}, {}, {}
     local chainLab = {}
@@ -2476,8 +2911,44 @@ function DG.PaintQuestOverview(d)
         nw = math.floor((availW - 16 - 4 * COL_GAP) / 5)
         if nw < 72 then nw = 72 end
     end
+    local qovHasBranch = false
+    do
+        local qovPreT = ns.DungeonQuestPreExtra
+        if type(qovPreT) == "table" then
+            local function qovChainBr(pid, seen)
+                if seen[pid] then return false end
+                seen[pid] = true
+                local pe = qovPreT[pid]
+                if type(pe) == "table" then
+                    local ii = 2
+                    while type(pe[ii]) == "number" do
+                        if not inside[pe[ii]] then return true end
+                        ii = ii + 1
+                    end
+                    local p1 = pe[1]
+                    if type(p1) == "number" and not inside[p1] then
+                        return qovChainBr(p1, seen)
+                    end
+                end
+                return false
+            end
+            for i = 1, #list do
+                local pres = DG.PreForSide(list[i][9], side)
+                if type(pres) == "table" then
+                    for _, pid in ipairs(pres) do
+                        if type(pid) == "number" and not inside[pid] then
+                            if qovChainBr(pid, {}) then qovHasBranch = true break end
+                        end
+                    end
+                end
+                if qovHasBranch then break end
+            end
+        end
+    end
+    local qovBrShift = qovHasBranch and (nw + COL_GAP) or 0
+    local qovBranchX = 8
     local colX = {}
-    for c = 1, nCols do colX[c] = 8 + (c - 1) * (nw + COL_GAP) end
+    for c = 1, nCols do colX[c] = 8 + qovBrShift + (c - 1) * (nw + COL_GAP) end
 
     local nodes = {}
     local nNode = 0
@@ -2544,6 +3015,7 @@ function DG.PaintQuestOverview(d)
             n.stbar:SetPoint("LEFT", n, "LEFT", 3, 0)
             n.posB = DG.MakeBadge(n, DG.Q_BADGE_PRE_BG)
             n.clsB = DG.MakeBadge(n, DG.Q_BADGE_CLS_BG)
+            n.profB = DG.MakeBadge(n, DG.Q_BADGE_PROF_BG)
             n.tint = n:CreateTexture(nil, "ARTWORK")
             n.tint:SetAllPoints()
             n.tint:Hide()
@@ -2574,9 +3046,7 @@ function DG.PaintQuestOverview(d)
                 if self.__q then
                     DG.OpenQuest(self.__q[1])
                 elseif self.__ext then
-                    U.dungeonQDetExt = self.__ext
-                    U:RenderDungeonQuests()
-                    ns.PlaySound(1)
+                    DG.OpenQuest(self.__ext)
                 end
             end)
             pool.node[nNode] = n
@@ -2602,10 +3072,12 @@ function DG.PaintQuestOverview(d)
         return l
     end
 
-    local function nodeState(q)
-        if DG.QuestDone(q[1]) then return DG.Q_OV_DONE end
-        if DG.QuestReady(q[1]) then return DG.Q_OV_READY end
-        if DG.QuestActive(q[1]) then return DG.Q_OV_ACT end
+    local function ovState(id)
+        local st = DG.QuestBadgeState(id)
+        if st == "done" then return DG.Q_OV_DONE end
+        if st == "ready" then return DG.Q_OV_READY end
+        if st == "active" then return DG.Q_OV_ACT end
+        if st == "rep" then return DG.Q_OV_REP end
         return DG.Q_OV_TODO
     end
     local MARK_ICON = {
@@ -2613,14 +3085,8 @@ function DG.PaintQuestOverview(d)
         [DG.Q_OV_READY] = "Interface\\AddOns\\DungeonsForever\\Media\\icon\\QUEST\\QMarkTurnIn",
         [DG.Q_OV_ACT] = "Interface\\AddOns\\DungeonsForever\\Media\\icon\\QUEST\\QMarkAsk",
         [DG.Q_OV_TODO] = "Interface\\AddOns\\DungeonsForever\\Media\\icon\\QUEST\\QMarkExcl",
+        [DG.Q_OV_REP] = "Interface\\AddOns\\DungeonsForever\\Media\\icon\\QUEST\\QMarkAsk",
     }
-    local function extState(pid)
-        local st = DG.QuestState(pid)
-        if st == "done" then return DG.Q_OV_DONE end
-        if st == "ready" then return DG.Q_OV_READY end
-        if st == "active" then return DG.Q_OV_ACT end
-        return DG.Q_OV_TODO
-    end
     local function nodeBorder(n, c)
         local hc = n.__huiCard
         local bd = hc and hc.border
@@ -2650,6 +3116,7 @@ function DG.PaintQuestOverview(d)
         [DG.Q_OV_READY] = { 0.020, 0.180, 0.172 },
         [DG.Q_OV_ACT] = { 0.227, 0.165, 0 },
         [DG.Q_OV_TODO] = { 0.102, 0.102, 0.102 },
+        [DG.Q_OV_REP] = { 0.18, 0.14, 0.26 },
     }
     local function setMark(n, c)
         if n.okD then
@@ -2695,8 +3162,9 @@ function DG.PaintQuestOverview(d)
         n.posB:SetPoint("TOPLEFT", n, "TOPLEFT", 6, -24)
         n.posB:Show()
         DG.QuestOverviewClsBadge(n, q[15])
+        DG.QuestOverviewProfBadge(n, DG.QuestProf(q[1]))
         n.sub:SetText("")
-        applyState(n, nodeState(q))
+        applyState(n, ovState(q[1]))
         n.tint:Hide()
         n.__tintC = nil
         n.__selNow = (q[1] == U.dungeonQuestSel)
@@ -2745,7 +3213,9 @@ function DG.PaintQuestOverview(d)
         n.posB:ClearAllPoints()
         n.posB:SetPoint("TOPLEFT", n, "TOPLEFT", 6, -24)
         n.posB:Show()
-        applyState(n, extState(pid))
+        if n.clsB then n.clsB:Hide() end
+        if n.profB then n.profB:Hide() end
+        applyState(n, ovState(pid))
         n.tint:Hide()
         n.__tintC = nil
         n.__selNow = (U.dungeonQDetExt ~= nil and pid == U.dungeonQDetExt)
@@ -2774,6 +3244,7 @@ function DG.PaintQuestOverview(d)
         end
         if n.posB then n.posB:Hide() end
         if n.clsB then n.clsB:Hide() end
+        if n.profB then n.profB:Hide() end
         n.stbar:Hide()
         if n.okD then n.okD:Hide() end
         if n.okT then n.okT:Hide() end
@@ -2799,6 +3270,7 @@ function DG.PaintQuestOverview(d)
         if lc == DG.Q_OV_DONE then return 4 end
         if lc == DG.Q_OV_READY then return 3 end
         if lc == DG.Q_OV_ACT then return 2 end
+        if lc == DG.Q_OV_REP then return 1 end
         return 0
     end
     local function rawSeg(x1, y1, x2, y2, lc)
@@ -2923,16 +3395,11 @@ function DG.PaintQuestOverview(d)
         path(lc, { { x1, y1 }, { x1, midY }, { x2, midY }, { x2, y2 } })
     end
     local function lineColor(childQ, srcQ)
-        if DG.QuestDone(childQ[1]) or (srcQ and DG.QuestDone(srcQ[1])) then
-            return DG.Q_OV_DONE
-        end
-        if DG.QuestReady(childQ[1]) or (srcQ and DG.QuestReady(srcQ[1])) then
-            return DG.Q_OV_READY
-        end
-        if DG.QuestActive(childQ[1]) or (srcQ and DG.QuestActive(srcQ[1])) then
-            return DG.Q_OV_ACT
-        end
-        return DG.Q_OV_TODO
+        local c = ovState(childQ[1])
+        if not srcQ then return c end
+        local s = ovState(srcQ[1])
+        if (lineLvl(s) or 0) > (lineLvl(c) or 0) then return s end
+        return c
     end
 
     local function hline(y, x1, x2, lc)
@@ -2955,6 +3422,28 @@ function DG.PaintQuestOverview(d)
         end
         if cnt > 1 then multiPre = true break end
     end
+    local ovMap = ns.DungeonQuestOVMap and ns.DungeonQuestOVMap[d.id]
+    local ovSpec = type(ovMap) == "table" and ovMap[side] or nil
+    if type(ovSpec) ~= "table" or type(ovSpec.at) ~= "table" then ovSpec = nil end
+    if ovSpec then
+        local ovMaxCol = 0
+        for _, cr in pairs(ovSpec.at) do
+            if type(cr) == "table" and type(cr[1]) == "number" and cr[1] > ovMaxCol then
+                ovMaxCol = cr[1]
+            end
+        end
+        if ovMaxCol < 1 then
+            ovSpec = nil
+        elseif ovMaxCol > nCols then
+            nCols = ovMaxCol
+            for c = 1, nCols do colX[c] = 8 + (c - 1) * (nw + COL_GAP) end
+        end
+    end
+    if ovSpec and qovBrShift > 0 then
+        for c = 1, nCols do
+            colX[c] = 8 + (c - 1) * (nw + COL_GAP)
+        end
+    end
     local fwCard = nw * 2 + COL_GAP
     local hasCard = (nCols > 0) and (DG.CurQuestFlow(d) ~= nil)
     local canvasW = (nCols > 0) and (colX[nCols] + nw + 8) or math.max(DG.Q_LIST_W - 24, 200)
@@ -2965,7 +3454,162 @@ function DG.PaintQuestOverview(d)
     local cardX = startCX + nw + 8
     local maxRR = 0
     if nCols == 0 and U.dungeonQOVFlowCard then U.dungeonQOVFlowCard:Hide() end
-    if nCols > 0 and not multiPre then
+    if ovSpec then
+        local minLv, maxLv = nil, nil
+        for i = 1, #list do
+            local lv = tonumber(list[i][3])
+            if lv then
+                if not minLv or lv < minLv then minLv = lv end
+                if not maxLv or lv > maxLv then maxLv = lv end
+            end
+        end
+        local dMin = (minLv and DG.DifficultyColor(minLv)) or DG.Q_OV_DONE
+        local dMax = (maxLv and DG.DifficultyColor(maxLv)) or { 1, 0.5, 0.25, 1 }
+        local lvB = (maxLv and (UnitLevel("player") or 0) >= maxLv) and DG.Q_OV_DONE or nil
+
+        local nodeOf, colOf, rowOf = {}, {}, {}
+        local maxR = 0
+        for qid, cr in pairs(ovSpec.at) do
+            local c, r = cr[1], cr[2]
+            local row = inside[qid] and DG.QuestRowByID(qid) or nil
+            if row then
+                nodeOf[qid] = place(row, c, rowY(r))
+            else
+                nodeOf[qid] = placeExt(qid, c, rowY(r))
+            end
+            colOf[qid] = c
+            rowOf[qid] = r
+            if r > maxR then maxR = r end
+        end
+
+        local function ovPre(qid)
+            local row = inside[qid] and DG.QuestRowByID(qid) or nil
+            local src = row and row[9] or (ns.DungeonQuestPreExtra and ns.DungeonQuestPreExtra[qid])
+            local ps = DG.PreForSide(src, side)
+            local out = {}
+            if type(ps) == "table" then
+                for i = 1, #ps do
+                    if type(ps[i]) == "number" then out[#out + 1] = ps[i] end
+                end
+            end
+            return out
+        end
+
+        local ovNoIn = type(ovSpec.noIn) == "table" and ovSpec.noIn or nil
+        local ovNoStart = type(ovSpec.noStart) == "table" and ovSpec.noStart or nil
+        local ovNoTail = type(ovSpec.noTail) == "table" and ovSpec.noTail or nil
+        local ovExtra = type(ovSpec.extra) == "table" and ovSpec.extra or nil
+        local extraOf = {}
+        if ovExtra then
+            for i = 1, #ovExtra do
+                if type(ovExtra[i]) == "table" then
+                    local ea, eb = ovExtra[i][1], ovExtra[i][2]
+                    if type(ea) == "number" and type(eb) == "number" then
+                        extraOf[eb] = extraOf[eb] or {}
+                        extraOf[eb][#extraOf[eb] + 1] = ea
+                    end
+                end
+            end
+        end
+        for qid in pairs(nodeOf) do
+            local cc, cxl = colOf[qid], colX[colOf[qid]]
+            local kids = ovPre(qid)
+            local ex = extraOf[qid]
+            if ex then
+                for i = 1, #ex do kids[#kids + 1] = ex[i] end
+            end
+            local show = not (ovNoIn and (ovNoIn[cc] or ovNoIn[qid]))
+            for i = 1, show and #kids or 0 do
+                local pid = kids[i]
+                if nodeOf[pid] then
+                    local pc, pxl = colOf[pid], colX[colOf[pid]]
+                    local pedge = (pc > cc) and pxl or (pxl + nw)
+                    local lc = ovState(qid) or DG.Q_OV_TODO
+                    local py = rowY(rowOf[pid])
+                    local cy = rowY(rowOf[qid])
+                    if pc == cc then
+                        vline(pxl + nw / 2, py + DG.Q_OV_H, cy, lc)
+                    elseif rowOf[pid] == rowOf[qid] then
+                        hline(py + DG.Q_OV_H / 2, pxl + nw, cxl, lc)
+                    else
+                        path(lc, {
+                            { pedge, py + DG.Q_OV_H / 2 },
+                            { cxl + nw / 2, py + DG.Q_OV_H / 2 },
+                            { cxl + nw / 2, cy },
+                        })
+                    end
+                end
+            end
+        end
+
+        local spr = ovSpec.start
+        if type(spr) == "table" then
+            placeMark(format(L["最低 %d 级"], minLv or 1), format(L["最高 %d 级"], maxLv or minLv or 1),
+                      dMin, colX[spr[1]], rowY(spr[2]), lvB, dMax)
+            local busY = rowY(spr[2]) + DG.Q_OV_H + 10
+            local scx = colX[spr[1]] + nw / 2
+            local stop = rowY(spr[2]) + DG.Q_OV_H
+            local hasPar, topOf = {}, {}
+            for qid in pairs(nodeOf) do
+                local pk = ovPre(qid)
+                local ex = extraOf[qid]
+                if ex then
+                    for i = 1, #ex do pk[#pk + 1] = ex[i] end
+                end
+                for i = 1, #pk do
+                    if nodeOf[pk[i]] then hasPar[qid] = true end
+                end
+                local c0 = colOf[qid]
+                if not topOf[c0] or rowOf[qid] < rowOf[topOf[c0]] then topOf[c0] = qid end
+            end
+            for c0, qid in pairs(topOf) do
+                if not hasPar[qid] and not (ovNoIn and ovNoIn[c0]) and not (ovNoStart and ovNoStart[qid]) then
+                    local cx = colX[c0] + nw / 2
+                    if math.abs(cx - scx) < 0.5 then
+                        vline(cx, stop, rowY(rowOf[qid]), DG.Q_OV_TODO)
+                    else
+                        path(DG.Q_OV_TODO, { { scx, stop }, { scx, busY }, { cx, busY }, { cx, rowY(rowOf[qid]) } })
+                    end
+                end
+            end
+        end
+
+        local fin = ovSpec.finish
+        if type(fin) == "table" then
+            local tailRow, tailOn = {}, {}
+            for qid in pairs(colOf) do
+                local c = colOf[qid]
+                if not (ovNoIn and ovNoIn[c]) and not (ovNoTail and ovNoTail[c]) then
+                    tailOn[c] = true
+                    if not tailRow[c] or rowOf[qid] > tailRow[c] then tailRow[c] = rowOf[qid] end
+                end
+            end
+            local allDone = true
+            for i = 1, #list do
+                if ovState(list[i][1]) ~= DG.Q_OV_DONE then allDone = false break end
+            end
+            local endY = rowY(fin[2])
+            local endCX = colX[fin[1]]
+            if allDone then
+                placeMark(L["已完成"], L["任务路线"], DG.Q_OV_DONE, endCX, endY, DG.Q_OV_DONE)
+            else
+                placeMark(L["未完成"], L["任务路线"], { 0.85, 0.25, 0.25, 1 }, endCX, endY)
+            end
+            local busY = endY - 10
+            local ecx = endCX + nw / 2
+            for c in pairs(tailOn) do
+                local cx = colX[c] + nw / 2
+                local yb = rowY(tailRow[c] or 0) + DG.Q_OV_H
+                if math.abs(cx - ecx) < 0.5 then
+                    vline(cx, yb, endY, DG.Q_OV_TODO)
+                else
+                    path(DG.Q_OV_TODO, { { cx, yb }, { cx, busY }, { ecx, busY }, { ecx, endY } })
+                end
+            end
+            if fin[2] > maxR then maxR = fin[2] end
+        end
+        maxRR = maxR
+    elseif nCols > 0 and not multiPre then
         local minLv, maxLv = nil, nil
         for i = 1, #list do
             local lv = tonumber(list[i][3])
@@ -3046,7 +3690,7 @@ function DG.PaintQuestOverview(d)
                 end
                 for k = 1, #ch do
                     local q = ch[k]
-                    local pres = q[9]
+                    local pres = DG.PreForSide(q[9], side)
                     if type(pres) == "table" then
                         for _, pid in ipairs(pres) do
                             if type(pid) == "number" and not inside[pid] and not extDone[pid] then
@@ -3063,7 +3707,7 @@ function DG.PaintQuestOverview(d)
                                 local xh = chainEx[1]
                                 local peh = ns.DungeonQuestPreExtra and ns.DungeonQuestPreExtra[xh]
                                 local ph = (type(peh) == "table" and peh[1]) or nil
-                                local sh = ph and extPos[ph]
+                                local sh = ph and (extPos[ph] or cardPos[ph])
                                 if sh and sh.root ~= r then
                                     subMainOf[r] = sh.root
                                     subSrcNode[r] = sh.n
@@ -3115,6 +3759,53 @@ function DG.PaintQuestOverview(d)
             colBot[c] = prev
         end
 
+        do
+            local function cellTaken(x, y)
+                for _, nn in pairs(nodeByQid) do
+                    if nn and math.abs((nn.__ox or 0) - x) < 2 and math.abs((nn.__oy or 0) - y) < 2 then return true end
+                end
+                for _, nn in pairs(nodeByExt) do
+                    if nn and math.abs((nn.__ox or 0) - x) < 2 and math.abs((nn.__oy or 0) - y) < 2 then return true end
+                end
+                return false
+            end
+            local function parentCol(x)
+                local best, bd = 1, 1e9
+                for cc = 1, nCols do
+                    local d = math.abs(colX[cc] - x)
+                    if d < bd then bd, best = d, cc end
+                end
+                return best
+            end
+            local extra = {}
+            for xid, pn in pairs(nodeByExt) do
+                local pe = ns.DungeonQuestPreExtra and ns.DungeonQuestPreExtra[xid]
+                if type(pe) == "table" then
+                    local ii = 2
+                    while type(pe[ii]) == "number" do
+                        local bid = pe[ii]
+                        if not inside[bid] and not nodeByExt[bid] then
+                            extra[#extra + 1] = { bid, xid, pn }
+                        end
+                        ii = ii + 1
+                    end
+                end
+            end
+            for _, ex in ipairs(extra) do
+                local bid, xid, pn = ex[1], ex[2], ex[3]
+                local pc = parentCol(pn.__ox or colX[1])
+                local py = pn.__oy or rowY(0)
+                local bx, by = qovBranchX, py
+                local guard = 0
+                while cellTaken(bx, by) and guard < 24 do guard = guard + 1; by = by + ROWH end
+                local bn = placeExt(bid, pc, by, bx, xid)
+                nodeByExt[bid] = bn
+                if not colTop[pc] then colTop[pc] = bn end
+                if not extPos[bid] then extPos[bid] = { n = bn, row = math.floor(by / ROWH), root = 0 } end
+                hline(py + DG.Q_OV_H / 2, bx + nw, pn.__ox or colX[1], lineColor({ bid }, { xid }))
+            end
+        end
+
         local spineY = (DG.Q_OV_H + rowY(0)) / 2
         local xTop = startCX + nw / 2
         local xL, xR = xTop, 0
@@ -3134,9 +3825,10 @@ function DG.PaintQuestOverview(d)
         local marks = {}
         for c = 1, nCols do
             local tq = chains[packs[c][1]][1]
-            local dn = (tq and DG.QuestDone(tq[1])) or false
-            local rd = (tq and DG.QuestReady(tq[1])) or false
-            local ac = (tq and DG.QuestActive(tq[1])) or false
+            local tst = (tq and ovState(tq[1])) or DG.Q_OV_TODO
+            local dn = (tst == DG.Q_OV_DONE)
+            local rd = (tst == DG.Q_OV_READY)
+            local ac = (tst == DG.Q_OV_ACT)
             if dn then anyDone = true end
             if rd then anyRdy = true end
             if ac then anyAct = true end
@@ -3290,7 +3982,7 @@ function DG.PaintQuestOverview(d)
         local endCX = startCX
         local allDone = true
         for i = 1, #list do
-            if not DG.QuestDone(list[i][1]) then
+            if ovState(list[i][1]) ~= DG.Q_OV_DONE then
                 allDone = false
                 break
             end
@@ -3316,9 +4008,9 @@ function DG.PaintQuestOverview(d)
                 bmarks[#bmarks + 1] = {
                     x = colX[c] + nw / 2,
                     y = bn.__oy + DG.Q_OV_H,
-                    dn = (bn.__q and DG.QuestDone(bn.__q[1])) and true or false,
-                    rd = (bn.__q and DG.QuestReady(bn.__q[1])) and true or false,
-                    ac = (bn.__q and DG.QuestActive(bn.__q[1])) and true or false,
+                    dn = (bn.__q and ovState(bn.__q[1]) == DG.Q_OV_DONE) and true or false,
+                    rd = (bn.__q and ovState(bn.__q[1]) == DG.Q_OV_READY) and true or false,
+                    ac = (bn.__q and ovState(bn.__q[1]) == DG.Q_OV_ACT) and true or false,
                 }
             end
         end
@@ -3446,7 +4138,7 @@ function DG.PaintQuestOverview(d)
         for i = 1, #list do
             local q = list[i]
             local cn = nodeByQid[q[1]]
-            local pres = q[9]
+            local pres = DG.PreForSide(q[9], side)
             if cn and type(pres) == "table" then
                 for _, pid in ipairs(pres) do
                     if inside[pid] then
@@ -3486,7 +4178,7 @@ function DG.PaintQuestOverview(d)
             if graph[qid] then return end
             graph[qid] = { row = row }
             order[#order + 1] = qid
-            local pres = row and row[9] or (extInfo[qid] and extInfo[qid].pre)
+            local pres = DG.PreForSide(row and row[9] or (extInfo[qid] and extInfo[qid].pre), DG.ViewSide())
             if type(pres) == "table" then
                 local ps = {}
                 for _, pid in ipairs(pres) do
@@ -3732,6 +4424,9 @@ function DG.PaintQuestOverview(d)
     if U.dungeonQOVSync then U.dungeonQOVSync() end
     if U.dungeonQOVClamp then U.dungeonQOVClamp() end
     for i = nNode + 1, #(pool.node) do pool.node[i]:Hide() end
+    for i = nLine + 1, #(pool.line) do pool.line[i]:Hide() end
+    for i = nArc + 1, #(pool.arc) do pool.arc[i]:Hide() end
+    for i = nFil + 1, #(pool.fil) do pool.fil[i]:Hide() end
     end)
     if gcOn then pcall(collectgarbage, "restart") end
     if not qovOk then _G.DF_QOV_ERR = tostring(qovErr) end
@@ -3821,7 +4516,7 @@ function DG.EnsureDetailBuilt()
     U.dungeonDetailHero = hero
     U.dungeonDetailBase = hero:GetFrameLevel()
 
-    local back = NewButton(detail, L["副本"], 76, 24, 14)
+    local back = NewButton(detail, L["副本"], ns.WIDE_UI and 100 or 76, 24, 14)
     back:SetFrameLevel(hero:GetFrameLevel() + 1)
     back:SetPoint("TOPLEFT", detail, "TOPLEFT", 8, -8)
     back:SetScript("OnClick", function()
@@ -4034,9 +4729,13 @@ function DG.ApplyDetailChrome(cur)
             if bt then
                 local bx = DG.Q_PAD
                 for k = 1, i - 1 do bx = bx + ((k <= 2) and 92 or 50) end
+                local bw = (i <= 2) and 84 or 42
+                if ns.WIDE_UI and DG.Q_BTN_EN[i] then
+                    bx, bw = DG.Q_PAD + DG.Q_BTN_EN[i][1], DG.Q_BTN_EN[i][2]
+                end
                 bt:ClearAllPoints()
                 bt:SetPoint("TOPLEFT", plateL, "TOPLEFT", bx, -DG.Q_PAD)
-                bt:SetWidth((i <= 2) and 84 or 42)
+                bt:SetWidth(bw)
                 bt:SetFrameLevel(plateL:GetFrameLevel() + 5)
             end
         end
@@ -4222,7 +4921,7 @@ function DG.BuildDetailFilterRow()
         bt:SetScript("OnEnter", function(self)
             if GameTooltip then
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:AddLine(L["图钉设置"], 1, 0.82, 0)
+                GameTooltip:AddLine(L["任务设置"], 1, 0.82, 0)
                 GameTooltip:Show()
             end
             self.hot = true
@@ -4362,9 +5061,11 @@ function DG.BuildDungeonOverview()
                 badge:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
             end
         end
+        local bossList = ns.MapModule and ns.MapModule.BossesFor and ns.MapModule.BossesFor(d.id)
+        local bossNum = (bossList and #bossList > 0) and #bossList or d.bossCount
         local lv = MakeFS(bar, 14, C_GREY, "LEFT")
         lv:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 7, 4)
-        lv:SetText(d.levelMin .. "–" .. d.levelMax .. (d.bossCount and (" · BOSS " .. d.bossCount) or ""))
+        lv:SetText(d.levelMin .. "–" .. d.levelMax .. (bossNum and (" · BOSS " .. bossNum) or ""))
 
         SetTip(bar, d.name .. "  " .. d.nameEn .. "\n" ..
             format(L["等级 %d–%d · %s"], d.levelMin, d.levelMax, d.zone or L["位置未知"]))
@@ -4460,6 +5161,7 @@ DG.LOOT_CARD_ROW_GAP = 4
 DG.LOOT_CARD_NAME_R = 52
 DG.LOOT_CARD_HDR_H = DG.LOOT_HDR_H
 DG.LOOT_CARD_MIN_H = DG.LOOT_CARD_HDR_H + DG.LOOT_CARD_PAD
+DG.LOOT_CARD_ITEMS_MAX = 8
 
 DG.LOOT_TRASH = "__trash"
 DG.LOOT_TRASH_LABEL = L["小怪"]
@@ -4635,6 +5337,8 @@ function DG.BroadcastItemData(itemID)
     if BM and BM.OnItemData then BM.OnItemData(itemID) end
     local CQM = ns.ClassQuestUI
     if CQM and CQM.OnItemData then CQM.OnItemData(itemID) end
+    local CBT = ns.ClassBisUI
+    if CBT and CBT.OnItemData then CBT.OnItemData(itemID) end
     local MM = ns.MapModule
     if MM and MM.OnItemData then MM.OnItemData(itemID) end
     local PM = ns.ProfModule
@@ -4722,6 +5426,7 @@ function DG.PaintItemChip(c, itemID)
     if not (c and c.name and itemID) then return end
     local nm, hasName = DG.ItemName(itemID)
     c.name:SetText(nm)
+    FitName(c.name)
     if hasName then
         local qr, qg, qb = DG.QColor(DG.QualOf(itemID))
         if qr then
@@ -4992,6 +5697,7 @@ function DG.SweepMissingNames()
                         local nm = DG.HarvestTipName(it[1])
                         if nm and c.name then
                             c.name:SetText(nm)
+                            FitName(c.name)
                             local col = DG.__tipColor
                             if col then
                                 c.name:SetTextColor(col[1] or 1, col[2] or 1, col[3] or 1)
@@ -5089,7 +5795,6 @@ function DG.ShowItemTipBody(owner, it, extra, title)
     end
     if id and cached and GameTooltip.SetHyperlink then
         local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, "item:" .. tostring(id))
-        if ns.hui and ns.hui.MarkTipItem then ns.hui.MarkTipItem(GameTooltip, true) end
         if ok then
             GameTooltip:Show()
             local n = GameTooltip.NumLines and GameTooltip:NumLines() or 0
@@ -5099,7 +5804,6 @@ function DG.ShowItemTipBody(owner, it, extra, title)
     if not native and id then DG.RequestItem(id) end
 
     if native then
-        if ns.hui and ns.hui.MarkTipItem then ns.hui.MarkTipItem(GameTooltip, true) end
         local tl = ns.TipLines and ns.TipLines.Lines(id)
         DG.TipAppendMerged(extra, tl)
         if title then
@@ -5173,12 +5877,20 @@ function U:SetDungeonFilter(key)
     U:RenderDungeonLoot()
 end
 
+function DG.IsTrashSrc(s)
+    if type(s) ~= "table" then return false end
+    if s[1] == "Trash mobs" then return true end
+    local note = s[3]
+    if type(note) ~= "string" then return false end
+    return note:find("敌人", 1, true) ~= nil or note:find("敵人", 1, true) ~= nil
+end
+
 function DG.LootBossNames(loot)
     local seen, out = {}, {}
     for _, s in ipairs(loot or {}) do
         local nm = s[2]
         local note = s[3] or ""
-        local special = note:find("敌人", 1, true) or note:find("物件", 1, true)
+        local special = DG.IsTrashSrc(s) or note:find("物件", 1, true)
         if not special and type(nm) == "string" and nm ~= "" and not seen[nm] then
             seen[nm] = true
             out[#out + 1] = nm
@@ -5213,8 +5925,7 @@ function DG.OpenLootBossMenu(owner)
     local items = { { text = L["全部"], func = function() U:SetLootBoss(nil) end } }
     local hasTrash = false
     for _, s in ipairs(loot) do
-        local note = s[3] or ""
-        if note:find("敌人", 1, true) then hasTrash = true break end
+        if DG.IsTrashSrc(s) then hasTrash = true break end
     end
     if hasTrash then
         items[#items + 1] = { text = DG.LOOT_TRASH_LABEL,
@@ -5243,6 +5954,7 @@ function DG.ApplyLootDropdownChrome()
             lab = lab .. " " .. tostring(DG.__filterCounts and DG.__filterCounts[filter] or 0)
         end
         bt1:SetWidth(DG.LOOT_BOSS_W)
+        bt1.__fullText = L["类型："] .. lab
         bt1:SetText(DG.FitText(L["类型："] .. lab, 14, DG.LOOT_DD_TEXT_W))
         if bt1.__em then bt1.__em:Hide() end
         local bfs = bt1.GetFontString and bt1:GetFontString()
@@ -5282,6 +5994,28 @@ function U:SetQuestSide(key)
     ns.PlaySound(1)
 end
 
+function U:SelectDungeonQuest(qid)
+    if not qid then return end
+    local row = DG.QuestRowByID and DG.QuestRowByID(qid)
+    local side = (type(row) == "table") and row[2] or nil
+    if side ~= "A" and side ~= "H" then
+        local ext = ns.EnsureDungeonQuestExtInfo and ns.EnsureDungeonQuestExtInfo() or nil
+        local info = (type(ext) == "table") and ext[qid] or nil
+        side = (type(info) == "table") and info.side or nil
+    end
+    U.dungeonQView = "list"
+    U.dungeonQFlow = nil
+    U.dungeonQDetExt = nil
+    if side == "A" or side == "H" then U.dungeonQSide = side end
+    if U.dungeonQFilter == "todo" and DG.QuestDone and DG.QuestDone(qid) then
+        U.dungeonQFilter = "all"
+    end
+    U.dungeonQuestSel = qid
+    U.dungeonQListKey = nil
+    U.dungeonQDetKey = nil
+    U:RenderDungeonQuests()
+end
+
 function U:ShowDungeonDetail(d)
     if not U.dungeonBuilt then return end
     DG.EnsureDetailBuilt()
@@ -5301,11 +6035,12 @@ function U:ShowDungeonDetail(d)
     U.dungeonQFlow = nil
     U.dungeonQDetKey = nil
     U.dungeonQListKey = nil
+    if U.dungeonTab == "quest" then DG.QuestPageDefault(d) end
     if U.dungeonBack then U.dungeonBack:SetText(d.raid and L["团本"] or L["副本"]) end
     DG.PrewarmLoot(d)
 
     local titleFs = U.dungeonDetailTitle
-    local loc = (type(GetLocale) == "function" and GetLocale()) or "zhCN"
+    local loc = (type(DF_Locale) == "function" and DF_Locale()) or "zhCN"
     local nameTxt = d.name
     if loc ~= "zhCN" and loc ~= "zhTW" then nameTxt = d.nameEn or d.name end
     local tail = "  |cff8b8b8b" .. format(L["等级 %d-%d"], d.levelMin, d.levelMax) .. "|r"
@@ -5328,7 +6063,7 @@ end
 local function PaintWishStar(bt, id)
     local gm = ns.GearModule
     local on = gm and gm.WishIs and id and gm.WishIs(id)
-    bt.star:SetText(on and "★" or "☆")
+    bt.star:SetText(on and ns.SYM.star or ns.SYM.star0)
     if on then
         bt.star:SetTextColor(1, 0.82, 0, 1)
     else
@@ -5348,8 +6083,7 @@ function U:RenderDungeonLoot()
     if bossSel == DG.LOOT_TRASH then
         local has = false
         for _, s in ipairs(loot) do
-            local note = s[3] or ""
-            if note:find("敌人", 1, true) then has = true break end
+            if DG.IsTrashSrc(s) then has = true break end
         end
         if not has then bossSel = nil end
     elseif bossSel then
@@ -5367,8 +6101,7 @@ function U:RenderDungeonLoot()
         srcs = {}
         for _, s in ipairs(loot) do
             if bossSel == DG.LOOT_TRASH then
-                local note = s[3] or ""
-                if note:find("敌人", 1, true) then srcs[#srcs + 1] = s end
+                if DG.IsTrashSrc(s) then srcs[#srcs + 1] = s end
             elseif s[2] == bossSel then
                 srcs[#srcs + 1] = s
             end
@@ -5436,7 +6169,7 @@ function U:RenderDungeonLoot()
                     local tk = DG.LootTypeKey(it[1])
                     local g = byKey[tk]
                     if not g then
-                        g = { src = { "", tk, "", "", {} }, items = {} }
+                        g = { src = { "", tk, "", "", {} }, items = {}, trash = trashMode }
                         byKey[tk] = g
                         tg[#tg + 1] = g
                     end
@@ -5455,7 +6188,7 @@ function U:RenderDungeonLoot()
                     items[#items + 1] = it
                 end
             end
-            local g = { src = s, items = items }
+            local g = { src = s, items = items, trash = DG.IsTrashSrc(s) }
             if s[4] ~= "" then named[#named + 1] = g else special[#special + 1] = g end
         end
         groups = {}
@@ -5475,7 +6208,7 @@ function U:RenderDungeonLoot()
     end
 
     local function makeRow()
-        r = CreateFrame("Button", nil, child, "BackdropTemplate")
+        local r = CreateFrame("Button", nil, child, "BackdropTemplate")
         r:SetSize(cw, DG.LOOT_CARD_H)
         r:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -5527,6 +6260,8 @@ function U:RenderDungeonLoot()
         r.tag:SetPoint("TOPRIGHT", r, "TOPRIGHT", -30, -6)
         r.tp = MakeFS(r, DG.LOOT_FS_SUB, C_GREY, "LEFT")
         r.tp:SetPoint("TOPLEFT", r, "TOPLEFT", tx, -26)
+        -- 类型文字不能压到右侧掉率上 / keep the item type clear of the drop-chance column
+        r.tp:SetWordWrap(false)
         r.ch = MakeFS(r, DG.LOOT_FS_SUB, C_GREY, "RIGHT")
         r.ch:SetPoint("TOPRIGHT", r, "TOPRIGHT", -30, -26)
         r.note = MakeFS(r, DG.LOOT_FS_META, C_GREY, "LEFT")
@@ -5590,8 +6325,9 @@ function U:RenderDungeonLoot()
                 hdr[nH] = hd
             end
             local en = s[1] or ""
+            if en == s[2] then en = "" end
             local sub = s[3] or ""
-            if sub ~= "" then en = (en ~= "" and (en .. " · " .. sub) or sub) end
+            if sub ~= "" and sub ~= s[2] then en = (en ~= "" and (en .. " · " .. sub) or sub) end
             hd.name:SetText(s[2] .. (en ~= "" and ("  " .. DG.Hex(C_GREY) .. en .. "|r") or ""))
             hd.name:ClearAllPoints()
             hd.name:SetPoint("TOPLEFT", child, "TOPLEFT", 0, y)
@@ -5637,6 +6373,7 @@ function U:RenderDungeonLoot()
                     end
                     local nm, hasName = DG.ItemName(it[1])
                     local nbudget = it[3] and (cw - tx - DG.LOOT_TAG_W) or (cw - tx - DG.LOOT_TEXT_R)
+                    r.name.__fullText = nm
                     r.name:SetText(DG.FitText(nm, DG.LOOT_FS_NAME, nbudget))
                     if hasName then
                         r.name:SetTextColor(DG.QColor(DG.QualOf(it[1])))
@@ -5652,7 +6389,7 @@ function U:RenderDungeonLoot()
                         r.name:SetWidth(cw - tx - DG.LOOT_TEXT_R)
                         r.tag:Hide()
                     end
-                    r.tp:SetText(DG.ItemMeta(it[1]))
+                    r.tp:SetWidth(cw - tx - 78); r.tp:SetText(DG.ItemMeta(it[1]))
                     r.tp:Show()
                     r.ch:SetText(DG.Pct(it[2]) or "")
                     r.ch:Show()
@@ -5714,6 +6451,38 @@ function U:RenderDungeonLoot()
     U.dungeonDetailScroll:SetVerticalScroll(0)
 end
 
+function DG.LootCardUnits(groups, filter, fold, id, per, raidWide)
+    local units = {}
+    fold = fold or {}
+    per = per or DG.LOOT_CARD_ITEMS_MAX
+    for gi = 1, #groups do
+        local g = groups[gi]
+        local items = g.items or {}
+        if filter == "all" or #items > 0 then
+            local key = id .. "#" .. gi
+            local closed = fold[key] and true or false
+            local parts = 1
+            if g.trash and not raidWide and #items > per then
+                parts = math.ceil(#items / per)
+            end
+            for p = 1, parts do
+                if not (closed and p > 1) then
+                    local sub = items
+                    if parts > 1 then
+                        sub = {}
+                        for k = (p - 1) * per + 1, math.min(p * per, #items) do
+                            sub[#sub + 1] = items[k]
+                        end
+                    end
+                    units[#units + 1] = { gi = gi, key = key, src = g.src,
+                                          items = sub, all = items, closed = closed }
+                end
+            end
+        end
+    end
+    return units
+end
+
 function U:RenderDungeonLootCards(groups, filter, takeRow, makeRow, bossMode, bossEn, bossNpc)
     DG.EnsureCardPool()
     local d = U.dungeonDetailCur
@@ -5755,102 +6524,112 @@ function U:RenderDungeonLootCards(groups, filter, takeRow, makeRow, bossMode, bo
     local colY = {}
     for c = 1, cols do colY[c] = 0 end
 
+    local per = DG.LOOT_CARD_ITEMS_MAX
+    local units = DG.LootCardUnits(groups, filter, fold, d.id, per, raidWide)
+
+    if #units > (DG.LOOT_CARD_MAX or 0) then
+        DG.LOOT_CARD_MAX = #units
+        DG.PushStep(DG.BuildCardPool)
+        DG.RunSteps()
+        return
+    end
+
     local nC, nR = 0, 0
-    for gi = 1, #groups do
-        local g = groups[gi]
-        local items = g.items
-        if filter == "all" or #items > 0 then
-            nC = nC + 1
-            local card = cards[nC]
-            if not card then break end
-            local s = g.src
-            local key = d.id .. "#" .. gi
-            local closed = fold[key] and true or false
-            local n = closed and 0 or #items
-            local visRows = n
-            if raidWide and n > 0 then visRows = math.ceil(n / wideCols) end
-            local h = DG.LOOT_CARD_HDR_H + DG.LOOT_CARD_PAD
-            if n > 0 then h = h + visRows * DG.LOOT_CARD_H + (visRows - 1) * DG.LOOT_CARD_ROW_GAP end
-            local col = ((nC - 1) % cols) + 1
-            local cx, cy = (col - 1) * stepX, colY[col]
-            colY[col] = cy - (h + DG.LOOT_GAP_Y)
+    for ui = 1, #units do
+        local u = units[ui]
+        local items = u.items
+        nC = nC + 1
+        local card = cards[nC]
+        if not card then break end
+        local s = u.src
+        local key = u.key
+        local closed = u.closed
+        local n = closed and 0 or #items
+        local visRows = n
+        if raidWide and n > 0 then visRows = math.ceil(n / wideCols) end
+        local h = DG.LOOT_CARD_HDR_H + DG.LOOT_CARD_PAD
+        if n > 0 then h = h + visRows * DG.LOOT_CARD_H + (visRows - 1) * DG.LOOT_CARD_ROW_GAP end
+        local col = ((nC - 1) % cols) + 1
+        local cx, cy = (col - 1) * stepX, colY[col]
+        colY[col] = cy - (h + DG.LOOT_GAP_Y)
 
-            local en = s[1] or ""
-            local sub = s[3] or ""
-            if sub ~= "" then en = (en ~= "" and (en .. " · " .. sub) or sub) end
-            card.__gid = key
-            card.hit.__key = key
-            card.hit.__g = { gi = gi, items = items, srcName = s[2] or "", enName = en }
-            card:ClearAllPoints()
-            card:SetPoint("TOPLEFT", child, "TOPLEFT", cx, cy)
-            card:SetSize(cw, h)
-            card.__vtop, card.__vh, card.__vgen = -cy, h, DG.__vgen
-            card.hit:SetPoint("TOPLEFT", card, "TOPLEFT", 0, 0)
-            card.hit:SetPoint("TOPRIGHT", card, "TOPRIGHT", 0, 0)
-            card.arrD:SetShown(not closed)
-            card.arrU:SetShown(closed)
-            card.name:SetText(DG.FitText(s[2] or "", DG.LOOT_FS_HDR, nameW))
-            card.name:SetWidth(nameW)
-            card.cnt:SetText(format(L["%d 件"], #items))
-            card:Show()
-            card.hit:SetHeight(DG.LOOT_CARD_MIN_H)
+        local en = s[1] or ""
+        local sub = s[3] or ""
+        if sub ~= "" then en = (en ~= "" and (en .. " · " .. sub) or sub) end
+        card.__gid = key
+        card.hit.__key = key
+        card.hit.__g = { gi = u.gi, items = u.all, srcName = s[2] or "", enName = en }
+        card:ClearAllPoints()
+        card:SetPoint("TOPLEFT", child, "TOPLEFT", cx, cy)
+        card:SetSize(cw, h)
+        card.__vtop, card.__vh, card.__vgen = -cy, h, DG.__vgen
+        card.hit:SetPoint("TOPLEFT", card, "TOPLEFT", 0, 0)
+        card.hit:SetPoint("TOPRIGHT", card, "TOPRIGHT", 0, 0)
+        card.arrD:SetShown(not closed)
+        card.arrU:SetShown(closed)
+        card.name.__fullText = s[2] or ""
+        card.name:SetText(DG.FitText(s[2] or "", DG.LOOT_FS_HDR, nameW))
+        card.name:SetWidth(nameW)
+        card.cnt:SetText(format(L["%d 件"], closed and #u.all or #items))
+        card:Show()
+        card.hit:SetHeight(DG.LOOT_CARD_MIN_H)
 
-            for ii = 1, n do
-                nR = nR + 1
-                local it = items[ii]
-                local rx = cx + DG.LOOT_CARD_PAD
-                local ry = cy - DG.LOOT_CARD_HDR_H - (ii - 1) * (DG.LOOT_CARD_H + DG.LOOT_CARD_ROW_GAP)
-                if raidWide then
-                    local cc = ((ii - 1) % wideCols) + 1
-                    local rr = math.floor((ii - 1) / wideCols)
-                    rx = rx + (cc - 1) * (rowW + DG.LOOT_GAP_X)
-                    ry = cy - DG.LOOT_CARD_HDR_H - rr * wideStepY
-                end
-                takeRow(makeRow, function(r)
-                    r:SetSize(rowW, DG.LOOT_CARD_H)
-                    r.note:Hide()
-                    r.icon:SetTexture(DG.ItemIcon(it[1]))
-                    r.icon:Show()
-                    if ns.hui and ns.hui.SetIconRing then
-                        ns.hui.SetIconRing(r.icon, { ns.hui.QColor(DG.QualOf(it[1])) })
-                    end
-                    local nm, hasName = DG.ItemName(it[1])
-                    local nbudget = it[3] and (rowW - ix - DG.LOOT_TAG_W) or (rowW - ix - DG.LOOT_TEXT_R)
-                    r.name:SetText(DG.FitText(nm, DG.LOOT_FS_NAME, nbudget))
-                    if hasName then
-                        r.name:SetTextColor(DG.QColor(DG.QualOf(it[1])))
-                    else
-                        r.name:SetTextColor(Unpack(C_GREY))
-                    end
-                    r.__named = hasName
-                    r.name:Show()
-                    if it[3] then
-                        r.name:SetWidth(rowW - ix - DG.LOOT_TAG_W)
-                        r.tag:Show()
-                    else
-                        r.name:SetWidth(rowW - ix - DG.LOOT_TEXT_R)
-                        r.tag:Hide()
-                    end
-                    r.tp:SetText(DG.ItemMeta(it[1]))
-                    r.tp:Show()
-                    r.ch:SetText(DG.Pct(it[2]) or "")
-                    r.ch:Show()
-                    r.__it = it
-                    PaintWishStar(r.wishBt, it[1])
-                    local LF = ns.LootFilter
-                    if LF and LF.Apply then LF.Apply(r) end
-                    if r.__huiCard then
-                        HuiCardState(r, "flat")
-                    else
-                        r:SetBackdropColor(1, 1, 1, 0)
-                        r:SetBackdropBorderColor(1, 1, 1, 0)
-                    end
-                    r:ClearAllPoints()
-                    r:SetPoint("TOPLEFT", child, "TOPLEFT", rx, ry)
-                    r.__vtop, r.__vh, r.__vgen = -ry, DG.LOOT_CARD_H, DG.__vgen
-                    r:Show()
-                end)
+        for ii = 1, n do
+            nR = nR + 1
+            local it = items[ii]
+            local rx = cx + DG.LOOT_CARD_PAD
+            local ry = cy - DG.LOOT_CARD_HDR_H - (ii - 1) * (DG.LOOT_CARD_H + DG.LOOT_CARD_ROW_GAP)
+            if raidWide then
+                local cc = ((ii - 1) % wideCols) + 1
+                local rr = math.floor((ii - 1) / wideCols)
+                rx = rx + (cc - 1) * (rowW + DG.LOOT_GAP_X)
+                ry = cy - DG.LOOT_CARD_HDR_H - rr * wideStepY
             end
+            takeRow(makeRow, function(r)
+                r:SetSize(rowW, DG.LOOT_CARD_H)
+                r.note:Hide()
+                r.icon:SetTexture(DG.ItemIcon(it[1]))
+                r.icon:Show()
+                if ns.hui and ns.hui.SetIconRing then
+                    ns.hui.SetIconRing(r.icon, { ns.hui.QColor(DG.QualOf(it[1])) })
+                end
+                local nm, hasName = DG.ItemName(it[1])
+                local nbudget = it[3] and (rowW - ix - DG.LOOT_TAG_W) or (rowW - ix - DG.LOOT_TEXT_R)
+                r.name.__fullText = nm
+                r.name:SetText(DG.FitText(nm, DG.LOOT_FS_NAME, nbudget))
+                if hasName then
+                    r.name:SetTextColor(DG.QColor(DG.QualOf(it[1])))
+                else
+                    r.name:SetTextColor(Unpack(C_GREY))
+                end
+                r.__named = hasName
+                r.name:Show()
+                if it[3] then
+                    r.name:SetWidth(rowW - ix - DG.LOOT_TAG_W)
+                    r.tag:Show()
+                else
+                    r.name:SetWidth(rowW - ix - DG.LOOT_TEXT_R)
+                    r.tag:Hide()
+                end
+                r.tp:SetWidth(rowW - ix - 78); r.tp:SetText(DG.ItemMeta(it[1]))
+                r.tp:Show()
+                r.ch:SetText(DG.Pct(it[2]) or "")
+                r.ch:Show()
+                r.__it = it
+                PaintWishStar(r.wishBt, it[1])
+                local LF = ns.LootFilter
+                if LF and LF.Apply then LF.Apply(r) end
+                if r.__huiCard then
+                    HuiCardState(r, "flat")
+                else
+                    r:SetBackdropColor(1, 1, 1, 0)
+                    r:SetBackdropBorderColor(1, 1, 1, 0)
+                end
+                r:ClearAllPoints()
+                r:SetPoint("TOPLEFT", child, "TOPLEFT", rx, ry)
+                r.__vtop, r.__vh, r.__vgen = -ry, DG.LOOT_CARD_H, DG.__vgen
+                r:Show()
+            end)
         end
     end
 
@@ -5910,6 +6689,7 @@ function DG.LootModelApply(m, npc, disp)
     if disp and type(m.SetDisplayInfo) == "function" then
         pcall(m.SetDisplayInfo, m, disp)
     elseif npc then
+        if m.ClearModel then pcall(m.ClearModel, m) end
         pcall(m.SetCreature, m, npc)
     end
 end
@@ -6087,12 +6867,32 @@ end
 function DG.InvalidateQuestDone(doneID)
     DG.questDoneCache = {}
     DG.questDoneStamp = {}
-    DG.__preDone = nil
     DG.questRev = (DG.questRev or 0) + 1
     local v = tonumber(doneID)
     if v then
         DG.questDoneCache[v] = true
         if DG.questDoneSet then DG.questDoneSet[v] = true end
+    end
+end
+
+DG.QUEST_DONE_BY_ITEM = { [9240] = 9240 }
+
+local function ItemDoneNow(id)
+    if ItemDoneSaved(id) then return true end
+    local item = DG.QUEST_DONE_BY_ITEM[id]
+    if item and DG.BagItemCount(item) > 0 then
+        SaveItemDone(id)
+        return true
+    end
+    return false
+end
+
+function DG.SyncItemDone()
+    for id in pairs(DG.QUEST_DONE_BY_ITEM) do
+        if not ItemDoneSaved(id) then
+            local item = DG.QUEST_DONE_BY_ITEM[id]
+            if DG.BagItemCount(item) > 0 then SaveItemDone(id) end
+        end
     end
 end
 
@@ -6103,6 +6903,7 @@ function DG.QuestDone(id)
         local st = sim[id]
         if st ~= nil then return st == "done" end
     end
+    if DG.QUEST_DONE_BY_ITEM[id] and ItemDoneNow(id) then return true end
     if DG.questDoneCache[id] == true then return true end
     local set = DG.questDoneSet
     if set and set[id] then return true end
@@ -6215,6 +7016,7 @@ if type(SlashCmdList) == "table" then
         end
         local n = out and #out or 0
         if ns.ShowDungeonDetail then ns.ShowDungeonDetail(d.id) end
+        U.dungeonQFlow = nil
         U.dungeonQView = "overview"
         if U.dungeonBuilt then U:RenderDungeonQuests() end
         local sub = (b == "done" or b == "ready" or b == "active" or b == "none") and ("全部 " .. DG.QUEST_SIM_TEXT[b]) or "四态轮转"
@@ -6309,6 +7111,71 @@ function DG.QuestLink(id, lvl)
 end
 
 DG.__qDataAsked = DG.__qDataAsked or {}
+function DG.QuestPreChains(qid, maxChains, maxDepth)
+    local limitC = maxChains or 6
+    local limitD = maxDepth or 30
+    local function rowOf(id)
+        if type(id) ~= "number" then return nil end
+        local r = DG.QuestRowByID(id) or DG.ExtQuestRow(id)
+        if not r and ns.DungeonQuestPreExtra then
+            local ex = ns.DungeonQuestPreExtra[id]
+            if ex then r = { [1] = id, [9] = ex } end
+        end
+        return r
+    end
+    local function preOf(id)
+        local r = rowOf(id)
+        if not r then return nil end
+        local p = r[9]
+        if type(p) ~= "table" then return nil end
+        return DG.PreForSide(p, DG.ViewSide())
+    end
+    local chains = {}
+    local function walk(id, path)
+        if #chains >= limitC then return end
+        local p = preOf(id)
+        local nxt
+        if p then
+            for i = 1, #p do
+                local seg = p[i]
+                if type(seg) == "number" or type(seg) == "string" then
+                    nxt = nxt or {}
+                    nxt[#nxt + 1] = seg
+                end
+            end
+        end
+        if not nxt then
+            local ch = {}
+            for k = #path, 1, -1 do ch[#ch + 1] = path[k] end
+            chains[#chains + 1] = ch
+            return
+        end
+        if #path >= limitD then return end
+        for i = 1, #nxt do
+            local seg = nxt[i]
+            local dup = false
+            for k = 1, #path do
+                if path[k] == seg then dup = true break end
+            end
+            if not dup then
+                path[#path + 1] = seg
+                walk(seg, path)
+                path[#path] = nil
+            end
+        end
+    end
+    local roots = preOf(qid)
+    if roots then
+        for i = 1, #roots do
+            local seg = roots[i]
+            if type(seg) == "number" or type(seg) == "string" then
+                walk(seg, { seg })
+            end
+        end
+    end
+    return chains
+end
+
 function DG.PrefetchQuestData(list)
     local req = DG.QLFn("RequestLoadQuestByID")
     if not req then return end
@@ -6343,7 +7210,12 @@ end
 
 function DG.ExtQuestRow(pid)
     local info = ns.EnsureDungeonQuestExtInfo()[pid]
-    if not info then return nil end
+    local mq = DG.QuestRowByID(pid)
+    local oq = ns.DungeonQuestObj
+    if type(oq) ~= "table" then oq = nil end
+    local otxt = oq and oq[pid] or nil
+    if not info and not mq and not otxt then return nil end
+    if not info then info = {} end
     local req
     if info.goals then
         for _, g in ipairs(info.goals) do
@@ -6352,25 +7224,46 @@ function DG.ExtQuestRow(pid)
                 req[#req + 1] = g[2]
             end
         end
+    elseif mq and type(mq[14]) == "table" then
+        req = mq[14]
     end
+    local lv = info.lv or (mq and mq[3])
+    local lvStd = info.lvStd or (mq and mq[4])
     local diff
-    if info.lv and info.lvStd then
-        local t1 = info.lv
-        local t2 = math.max(t1 + 1, info.lv + 3)
-        local t3 = math.max(t2 + 1, info.lvStd - 2)
-        local t4 = math.max(t3 + 1, info.lvStd + 3)
-        local t5 = math.max(t4 + 1, info.lvStd + 7)
+    if lv and lvStd then
+        local t1 = lv
+        local t2 = math.max(t1 + 1, lv + 3)
+        local t3 = math.max(t2 + 1, lvStd - 2)
+        local t4 = math.max(t3 + 1, lvStd + 3)
+        local t5 = math.max(t4 + 1, lvStd + 7)
         diff = { { t1, 1 }, { t2, 2 }, { t3, 3 }, { t4, 4 }, { t5, 5 } }
     end
     local pre = info.pre
     if not pre and ns.DungeonQuestPreExtra and ns.DungeonQuestPreExtra[pid] then
         local ex = ns.DungeonQuestPreExtra[pid]
-        if type(ex) == "table" and type(ex[1]) == "number" then pre = { ex[1] } end
+        if type(ex) == "table" and type(ex[1]) == "number" then
+            pre = {}
+            for i = 1, #ex do
+                if type(ex[i]) == "number" then pre[#pre + 1] = ex[i] end
+            end
+        end
     end
+    if not pre and mq and type(mq[9]) == "table" then pre = mq[9] end
+    local npc = info.npc or (mq and mq[5])
+    local obj = info.obj or (mq and mq[11]) or nil
+    if not obj then obj = otxt end
     return {
-        pid, info.side, info.lv, info.lvStd, info.npc, info.zone, nil, info.si or nil,
-        pre, info.rew, info.obj, info.text, diff, req, info.cls, info.npcid, info.npc, info.gains,
-        true, info.obj,
+        pid, info.side or (mq and mq[2]), lv, lvStd, npc, info.zone or (mq and mq[6]), nil,
+        info.si or (mq and mq[8]) or nil, pre,
+        info.rew or (mq and mq[10]) or nil,
+        obj,
+        info.text or (mq and mq[12]) or nil,
+        diff, req,
+        info.cls or (mq and mq[15]) or nil,
+        info.npcid or (mq and mq[16]) or nil,
+        info.npc or (mq and mq[17]) or npc,
+        info.gains or (mq and mq[18]) or nil,
+        true, obj,
     }
 end
 
@@ -6456,7 +7349,10 @@ function DG.QuestObjectiveList(id)
     local out = {}
     for _, o in ipairs(list) do
         if type(o) == "table" and type(o.text) == "string" and o.text ~= "" then
-            out[#out + 1] = { o.text, tonumber(o.numFilled) or 0, tonumber(o.numRequired) or 0 }
+            local need = tonumber(o.numRequired) or 0
+            local done = tonumber(o.numFulfilled)
+            if done == nil then done = (o.finished and need) or 0 end
+            out[#out + 1] = { o.text, done, need }
         end
     end
     if #out == 0 then return nil end
@@ -6470,7 +7366,7 @@ function DG.QuestObjectives(id)
     for _, ob in ipairs(list) do
         local need = ob[3]
         if need > 0 and not ob[1]:find("%d+/%d+") then
-            parts[#parts + 1] = format("%s（%d/%d）", ob[1], ob[2], need)
+            parts[#parts + 1] = format(L["%s（%d/%d）"], ob[1], ob[2], need)
         else
             parts[#parts + 1] = ob[1]
         end
@@ -6520,7 +7416,13 @@ end
 
 function DG.ApplyChipBadge(c)
     if not (c and c.badge) then return end
-    if not c.__q then c.badge:Hide() return end
+    local full = (c:GetWidth() or 0) - 54
+    if full < 40 then full = 40 end
+    if c.sub then c.sub:SetWidth(full) end
+    if not c.__q then
+        c.badge:Hide()
+        return
+    end
     local have, need = DG.ItemObjectiveProgress(c.__q, c.__it and c.__it[1])
     if have then
         c.badge:SetText(format("%d/%d", have, need))
@@ -6530,6 +7432,7 @@ function DG.ApplyChipBadge(c)
             c.badge:SetTextColor(Unpack(C_GREY))
         end
         c.badge:Show()
+        if c.sub then c.sub:SetWidth(full - 50) end
     else
         c.badge:Hide()
     end
@@ -6555,7 +7458,7 @@ function DG.NeedObjectivesText(questID, items)
         end
         if not taken then
             if ob[3] > 0 and not ob[1]:find("%d+/%d+") then
-                parts[#parts + 1] = format("%s（%d/%d）", ob[1], ob[2], ob[3])
+                parts[#parts + 1] = format(L["%s（%d/%d）"], ob[1], ob[2], ob[3])
             else
                 parts[#parts + 1] = ob[1]
             end
@@ -6591,9 +7494,10 @@ function DG.GainsSegs(q)
     if money then
         local go, si, co = math.floor(money / 10000), math.floor((money % 10000) / 100), money % 100
         local ms = ""
-        if go > 0 then ms = ms .. go .. L["金"] end
-        if si > 0 then ms = ms .. si .. L["银"] end
-        if co > 0 or ms == "" then ms = ms .. co .. L["铜"] end
+        local sp = ns.WIDE_UI and " " or ""
+        if go > 0 then ms = ms .. go .. sp .. L["金"] end
+        if si > 0 then ms = ms .. (ms ~= "" and sp or "") .. si .. sp .. L["银"] end
+        if co > 0 or ms == "" then ms = ms .. (ms ~= "" and sp or "") .. co .. sp .. L["铜"] end
         seg[#seg + 1] = ms
     end
     if g and g.rep and #g.rep > 0 then
@@ -6601,7 +7505,7 @@ function DG.GainsSegs(q)
         for _, rr in ipairs(g.rep) do
             rs[#rs + 1] = rr[3] .. " +" .. rr[2]
         end
-        seg[#seg + 1] = table.concat(rs, "、")
+        seg[#seg + 1] = table.concat(rs, L["、"])
     end
     return seg
 end
@@ -6684,6 +7588,7 @@ function DG.EnsureQuestListener()
     ev:RegisterEvent("QUEST_LOG_UPDATE")
     pcall(ev.RegisterEvent, ev, "QUEST_ACCEPTED")
     pcall(ev.RegisterEvent, ev, "QUEST_REMOVED")
+    pcall(ev.RegisterEvent, ev, "BAG_UPDATE_DELAYED")
     ev:SetScript("OnEvent", function(_, event, arg1)
         C_Timer.After(0, function()
             if event == "QUEST_TURNED_IN" then
@@ -6700,8 +7605,12 @@ function DG.EnsureQuestListener()
                 DG.InvalidateQuestDone()
             elseif event == "QUEST_REMOVED" then
                 DG.InvalidateQuestDone()
+            elseif event == "BAG_UPDATE_DELAYED" then
+                DG.__bagGen = (DG.__bagGen or 0) + 1
+                DG.SyncItemDone()
             else
                 DG.BuildQuestSnap()
+                DG.SyncItemDone()
             end
             if U.RefreshQuestRows then U.RefreshQuestRows() end
         end)
@@ -6734,13 +7643,15 @@ function DG.ShowQuestTip(owner, q)
     GameTooltip:ClearLines()
     local nm, hasName = DG.QuestName(q[1])
     GameTooltip:AddLine(nm, 1, 1, 1, true)
-    local st = DG.QuestState(q[1])
+    local st = DG.QuestBadgeState(q[1])
     if st == "done" then
         GameTooltip:AddLine(L["已完成"], 0.25, 0.85, 0.35)
     elseif st == "ready" then
         GameTooltip:AddLine(L["完成未上交"], 0.15, 0.82, 0.78)
     elseif st == "active" then
         GameTooltip:AddLine(L["进行中"], 1, 0.82, 0)
+    elseif st == "rep" then
+        GameTooltip:AddLine(L["可重复"], 0.62, 0.50, 0.86)
     else
         GameTooltip:AddLine(L["未完成"], 0.6, 0.6, 0.6)
     end
@@ -6749,21 +7660,46 @@ function DG.ShowQuestTip(owner, q)
     local sloc = (smap and DG.LocText(smap, sx, sy, szone)) or DG.ZoneShort(q[6])
     local where = (q[17] and q[17] ~= "" and q[17]) or q[5] or ""
     if q[17] and q[17] ~= "" and q[16] then where = where .. " #" .. q[16] end
+    if not q[16] then
+        local slrT = ns.DungeonQuestStartLoc and ns.DungeonQuestStartLoc[q[1]]
+        if not (slrT and tonumber(slrT[1])) then
+            local inm = DG.TriggerItemName(where) or DG.TriggerItemName(slrT and slrT[2])
+            if inm then where = DG.TriggerItemTag(inm) end
+        end
+    end
     if sloc and sloc ~= "" then where = (where ~= "" and (where .. " · " .. sloc) or sloc) end
     if where ~= "" then GameTooltip:AddLine(L["起始："] .. where, 0.75, 0.75, 0.75, true) end
     do
+        local pslug, pteach, pname = DG.QuestProf(q[1])
+        if pslug then
+            local line = L["专业："] .. (DG.ProfLabel(pslug) or pslug)
+            local tn = DG.SpellLabel(pteach) or (pname and L[pname])
+            if tn then line = line .. " · " .. format(L["学会技能：%s"], tn) end
+            GameTooltip:AddLine(line, 0.86, 0.80, 0.58, true)
+        end
+    end
+    do
         local en = DG.QuestEndNpc(q[1])
-        if en then
+        if DG.Q_END_INSTANCE[q[1]] and en then
+            local label = (en[6] and en[6] ~= "") and en[6] or L["副本内"]
+            local nm = (en[2] and en[2] ~= "") and en[2] or ""
+            local idp = en[1] and (" #" .. en[1]) or ""
+            GameTooltip:AddLine(L["结束："] .. label .. " " .. nm .. idp, 0.75, 0.75, 0.75, true)
+        elseif en then
             local txt = (en[2] and en[2] ~= "" and en[2]) or ""
             if en[1] then txt = (txt ~= "" and (txt .. " #" .. en[1]) or ("#" .. en[1])) end
+            if (not en[1]) and DG.Q_END_OBJ[q[1]] == true and txt ~= "" then
+                txt = L["物品触发"] .. " · " .. txt
+            end
             local zl = DG.LocText(en[3], en[4], en[5], en[6])
             if zl and zl ~= "" then txt = (txt ~= "" and (txt .. " · " .. zl) or zl) end
             if txt ~= "" then GameTooltip:AddLine(L["结束："] .. txt, 0.75, 0.75, 0.75, true) end
         end
     end
-    if q[9] and #q[9] > 0 then
+    local preTip = DG.PreForSide(q[9], DG.ViewSide())
+    if preTip and #preTip > 0 then
         local parts = {}
-        for _, seg in ipairs(q[9]) do
+        for _, seg in ipairs(preTip) do
             if type(seg) == "number" then
                 local pnm, pok = DG.QuestName(seg)
                 if pok then
@@ -6778,7 +7714,7 @@ function DG.ShowQuestTip(owner, q)
             end
         end
         if #parts > 0 then
-            GameTooltip:AddLine(L["前置："] .. table.concat(parts, "、"), 0.75, 0.75, 0.75, true)
+            GameTooltip:AddLine(L["前置："] .. table.concat(parts, L["、"]), 0.75, 0.75, 0.75, true)
         end
     elseif q[7] then
         GameTooltip:AddLine(L["前置："] .. q[7], 0.75, 0.75, 0.75, true)
@@ -6813,6 +7749,10 @@ DG.Q_BADGE_RACE_BG = { 0.78, 0.14, 0.12, 1 }
 DG.Q_BADGE_IN_BG = { 0.20, 0.45, 0.55, 1 }
 DG.Q_BADGE_BUY_BG = { 0.16, 0.38, 0.62, 1 }
 DG.Q_BADGE_MID_BG = { 0.42, 0.26, 0.60, 1 }
+DG.Q_BADGE_PROF_BG = { 0.62, 0.36, 0.18, 1 }
+DG.Q_BADGE_ELITE_BG = { 0.85, 0.45, 0.10, 1 }
+DG.Q_BADGE_T05_BG = { 0.36, 0.24, 0.55, 1 }
+DG.Q_BADGE_NOREC_BG = { 0.55, 0.07, 0.07, 1 }
 DG.Q_RACE_TAG = { [1049] = { ok = { 2, 6, 8 }, label = "非亡灵" } }
 DG.Q_RACE_TAG_L = { ["非亡灵"] = L["非亡灵"] }
 function DG.QuestRaceOK(qid)
@@ -6841,16 +7781,18 @@ DG.Q_MARK_SYM = {
     ready = "Interface\\AddOns\\DungeonsForever\\Media\\icon\\QUEST\\QMarkTurnIn",
     active = "Interface\\AddOns\\DungeonsForever\\Media\\icon\\QUEST\\QMarkAsk",
     todo = "Interface\\AddOns\\DungeonsForever\\Media\\icon\\QUEST\\QMarkExcl",
+    rep = "Interface\\AddOns\\DungeonsForever\\Media\\icon\\QUEST\\QMarkAsk",
 }
 DG.Q_MARK_INK = {
     done = { 0.043, 0.239, 0.102 },
     ready = { 0.020, 0.180, 0.172 },
     active = { 0.227, 0.165, 0 },
     todo = { 0.102, 0.102, 0.102 },
+    rep = { 0.18, 0.14, 0.26 },
 }
 DG.Q_FLOW_SEC_GAP = 6
 DG.Q_FLOW_ST_GAP = 3
-DG.Q_FLOW_IDEO = "\227\128\128" .. " "
+DG.Q_FLOW_IDEO = ns.Sym("\227\128\128") .. " "
 DG.Q_LINK_ITEM = { 1, 0.92, 0.72 }
 DG.C_FAC_A = { 0.45, 0.65, 1 }
 DG.C_FAC_H = { 1, 0.40, 0.40 }
@@ -6861,7 +7803,7 @@ DG.Q_HDR_H = 26
 DG.Q_GRP_GAP = 8
 DG.Q_SUM_H = 28
 DG.Q_HEAD_H = DG.Q_PAD + 24 + DG.Q_PAD
-DG.Q_STATUS_TAG = { done = L["已完成"], ready = L["完成未上交"], active = L["进行中"], todo = L["未完成"] }
+DG.Q_STATUS_TAG = { done = L["已完成"], ready = L["完成未上交"], active = L["进行中"], todo = L["未完成"], rep = L["可重复"] }
 DG.QFILTERS = { "all", "todo", "done" }
 DG.QFILTER_LABEL = { all = L["全部"], todo = L["未完成"], done = L["已完成"] }
 DG.QSIDE_LABEL = { all = L["全部"], A = L["联盟"], H = L["部落"] }
@@ -6927,6 +7869,7 @@ function DG.QuestOverviewClsBadge(n, cls)
     if not b then return end
     if not cls or cls == "" then
         b:Hide()
+        n.__clsOn = false
         return
     end
     local lab = DG.QClassShort(cls) or cls
@@ -6941,6 +7884,33 @@ function DG.QuestOverviewClsBadge(n, cls)
     end
     b:ClearAllPoints()
     b:SetPoint("TOPLEFT", n.posB, "TOPRIGHT", 3, 0)
+    b:Show()
+    n.__clsOn = true
+end
+
+function DG.QuestOverviewProfBadge(n, slug)
+    local b = n.profB
+    if not b then return end
+    if not slug then
+        b:Hide()
+        return
+    end
+    local lab = DG.ProfLabel(slug) or slug
+    b.lab:SetText(lab)
+    local bw = FSW(b.lab, 20) + DG.Q_BADGE_PAD * 2
+    if bw < DG.Q_BADGE_MIN_W then bw = DG.Q_BADGE_MIN_W end
+    if ns.hui and ns.hui.PaintSolidChip and b.__chipFill then
+        ns.hui.PaintSolidChip(b, lab, DG.Q_BADGE_PROF_BG, bw)
+    else
+        b:SetWidth(bw)
+        DG.BadgeTint(b, DG.Q_BADGE_PROF_BG)
+    end
+    b:ClearAllPoints()
+    if n.__clsOn then
+        b:SetPoint("TOPLEFT", n.clsB, "TOPRIGHT", 3, 0)
+    else
+        b:SetPoint("TOPLEFT", n.posB, "TOPRIGHT", 3, 0)
+    end
     b:Show()
 end
 
@@ -6984,7 +7954,18 @@ function DG.StartLoc(qid, npcID)
     return nil
 end
 
+function DG.ItemTriggerStart(qid, npcID)
+    if npcID then return false end
+    if DG.QuestStartNpc(qid) then return true end
+    local sl = ns.DungeonQuestStartLoc and ns.DungeonQuestStartLoc[qid]
+    if not sl then return false end
+    if tonumber(sl[1]) then return false end
+    if sl[2] == "物品触发" then return true end
+    return DG.TriggerItemName(sl[2]) ~= nil
+end
+
 function DG.NodeLoc(qid, npcID, fb)
+    if DG.ItemTriggerStart(qid, npcID) then return L["副本"] end
     local m, x, y, z = DG.StartLoc(qid, npcID)
     local t = m and DG.LocText(m, x, y, z)
     if t and t ~= "" then return t end
@@ -7112,53 +8093,8 @@ function DG.ClsBadgeAt(r, i)
     return b
 end
 
-DG.__preDone = nil
-function DG.BuildPreDone(list)
-    local set = {}
-    local function pres(id)
-        local out = {}
-        local row = DG.QuestRowByID(id)
-        local q = row and row[9]
-        if type(q) == "table" then
-            for i = 1, #q do
-                local v = tonumber(q[i])
-                if v then out[#out + 1] = v end
-            end
-        end
-        local pe = ns.DungeonQuestPreExtra and ns.DungeonQuestPreExtra[id]
-        if type(pe) == "table" then
-            local v = tonumber(pe[1])
-            if v then out[#out + 1] = v end
-        end
-        return out
-    end
-    local function walk(id, depth)
-        if depth > 16 then return end
-        local ps = pres(id)
-        for i = 1, #ps do
-            local pid = ps[i]
-            if not set[pid] then
-                set[pid] = true
-                walk(pid, depth + 1)
-            end
-        end
-    end
-    if type(list) == "table" then
-        for i = 1, #list do
-            local id = list[i] and list[i][1]
-            if type(id) == "number" and (DG.QuestDone(id) or DG.QuestActive(id)) then
-                walk(id, 1)
-            end
-        end
-    end
-    DG.__preDone = set
-    return set
-end
-
 function DG.QuestState(id)
     if DG.QuestDone(id) then return "done" end
-    local pd = DG.__preDone
-    if pd and pd[id] then return "done" end
     if DG.QuestReady(id) then return "ready" end
     if DG.QuestActive(id) then return "active" end
     return "todo"
@@ -7190,6 +8126,26 @@ function DG.QuestRows(d)
     return keep, m, (other and "filtered" or nil)
 end
 
+function DG.IsOptQuest(id)
+    local ex = ns.EnsureDungeonQuestExtInfo()[id]
+    return (ex and ex.opt == true) or false
+end
+
+function DG.IsEliteQuest(id)
+    local ex = ns.EnsureDungeonQuestExtInfo()[id]
+    return (ex and ex.elite == true) or false
+end
+
+function DG.IsT05Quest(id)
+    local ex = ns.EnsureDungeonQuestExtInfo()[id]
+    return (ex and ex.t05 == true) or false
+end
+
+function DG.IsNoRecQuest(id)
+    local ex = ns.EnsureDungeonQuestExtInfo()[id]
+    return (ex and ex.norec == true) or false
+end
+
 function DG.QuestList(d)
     local alias = ns.DungeonQuestAlias and ns.DungeonQuestAlias[d.id]
     if alias then
@@ -7209,14 +8165,63 @@ function DG.QuestClassOK(qid)
     local cls = (type(row) == "table") and row[15] or nil
     if type(cls) ~= "string" or cls == "" then return true end
     if not UnitClass then return true end
-    local pc = UnitClass("player")
-    if not pc then return true end
+    local cn, tok = UnitClass("player")
+    if not cn then return true end
     local list = DG.QClassList(cls)
-    if not list then return cls == pc end
+    if not list then
+        if cn == cls then return true end
+        local t = DG.QCLASS_TOKEN[cls]
+        return (t and tok and t == tok) and true or false
+    end
     for i = 1, #list do
-        if list[i] == pc then return true end
+        local s = list[i]
+        if s == cn then return true end
+        local t = DG.QCLASS_TOKEN[s]
+        if t and tok and t == tok then return true end
     end
     return false
+end
+
+DG.PROF_LABEL = {
+    blacksmithing = "锻造", leatherworking = "制皮", tailoring = "裁缝",
+    engineering = "工程学", alchemy = "炼金术", herbalism = "草药学",
+    mining = "采矿", skinning = "剥皮", enchanting = "附魔",
+    jewelcrafting = "珠宝加工", cooking = "烹饪", fishing = "钓鱼",
+    ["first-aid"] = "急救",
+}
+
+function DG.QuestProf(qid)
+    local t = ns.DungeonQuestProf
+    local r = t and qid and t[qid]
+    if type(r) ~= "table" then return nil end
+    return r[1], r[2], r[3]
+end
+
+function DG.ProfLabel(slug)
+    if not slug then return nil end
+    return L[DG.PROF_LABEL[slug] or slug]
+end
+
+function DG.QuestProfOK(qid)
+    local slug = DG.QuestProf(qid)
+    if not slug then return true end
+    if type(ns.HasProf) ~= "function" then return true end
+    return ns.HasProf(slug)
+end
+
+function DG.SpellLabel(id)
+    if not id then return nil end
+    local n
+    if C_Spell and C_Spell.GetSpellName then
+        local ok, v = pcall(C_Spell.GetSpellName, id)
+        if ok then n = v end
+    end
+    if (type(n) ~= "string" or n == "") and type(GetSpellInfo) == "function" then
+        local ok, v = pcall(GetSpellInfo, id)
+        if ok and type(v) == "string" then n = v end
+    end
+    if type(n) ~= "string" or n == "" then return nil end
+    return n
 end
 
 DG.__optQuests = nil
@@ -7258,11 +8263,13 @@ function DG.QuestProgress(d)
         local q = list[i]
         local qid = type(q) == "table" and q[1] or nil
         local side = type(q) == "table" and q[2] or nil
-        if type(qid) == "number" and not opt[qid]
+        if type(qid) == "number" and not opt[qid] and not DG.IsT05Quest(qid)
             and (not side or side == "" or side == ps)
             and DG.QuestClassOK(qid) and DG.QuestRaceOK(qid) then
-            total = total + 1
-            if DG.QuestDone(qid) then done = done + 1 end
+            if not DG.QuestRepeat(qid) then
+                total = total + 1
+                if DG.QuestDone(qid) then done = done + 1 end
+            end
         end
     end
     DG.__qProgCache = DG.__qProgCache or {}
@@ -7290,6 +8297,49 @@ end
 function DG.QuestRowByID(id)
     DG.EnsureRowByID()
     return DG.__rowByID[id]
+end
+
+function DG.ViewSide()
+    local vs = U.dungeonQSide
+    if vs == "A" or vs == "H" then return vs end
+    local ps = DG.PlayerSide()
+    if ps == "A" or ps == "H" then return ps end
+    return nil
+end
+
+function DG.QuestSideOf(qid)
+    if type(qid) ~= "number" then return nil end
+    local row = DG.QuestRowByID(qid)
+    local sd = (type(row) == "table") and row[2] or nil
+    if sd ~= "A" and sd ~= "H" then
+        local ext = ns.EnsureDungeonQuestExtInfo and ns.EnsureDungeonQuestExtInfo() or nil
+        local info = (type(ext) == "table") and ext[qid] or nil
+        sd = (type(info) == "table") and info.side or nil
+    end
+    if sd ~= "A" and sd ~= "H" then
+        local t = ns.DungeonQuestSide
+        local v = (type(t) == "table") and t[qid] or nil
+        sd = (v == "A" or v == "H") and v or nil
+    end
+    if sd ~= "A" and sd ~= "H" then return nil end
+    return sd
+end
+
+function DG.PreForSide(pre, side)
+    if type(pre) ~= "table" or #pre == 0 then return pre end
+    if side ~= "A" and side ~= "H" then return pre end
+    local drop = false
+    for i = 1, #pre do
+        local ps = DG.QuestSideOf(pre[i])
+        if ps and ps ~= side then drop = true break end
+    end
+    if not drop then return pre end
+    local out = {}
+    for i = 1, #pre do
+        local ps = DG.QuestSideOf(pre[i])
+        if not (ps and ps ~= side) then out[#out + 1] = pre[i] end
+    end
+    return out
 end
 
 DG.__followers = nil
@@ -7370,11 +8420,21 @@ function DG.QuestKind(qid)
     return v
 end
 
+function DG.QuestTakeable(qid)
+    if not DG.QuestClassOK(qid) then return false end
+    if not DG.QuestProfOK(qid) then return false end
+    if DG.QuestRaceOK and not DG.QuestRaceOK(qid) then return false end
+    return true
+end
+
 function DG.FilterBranchHeads(list, side)
+    local takeOnly = (ns.MapModule and ns.MapModule.QuestTakeableOnly and ns.MapModule.QuestTakeableOnly()) and true or false
     local pool = {}
     for i = 1, #list do
         local q = list[i]
-        if not side or q[2] == side or not q[2] then pool[#pool + 1] = q end
+        if (not side or q[2] == side or not q[2]) and (not takeOnly or DG.QuestTakeable(q[1])) then
+            pool[#pool + 1] = q
+        end
     end
     local inPool, idx = {}, {}
     for i = 1, #pool do
@@ -7508,6 +8568,10 @@ function DG.PaintQListRow(r, st)
     end
 end
 
+-- 英文客户端：阵营/总览/列表按钮总宽不变，重新分配给更长的英文标签 {x, 宽}
+-- English UI: same total width for Faction/Overview/List buttons, redistributed for longer labels {x, width}
+DG.Q_BTN_EN = { { 0, 86 }, { 90, 86 }, { 180, 62 }, { 246, 34 } }
+
 function U:RenderDungeonQuests()
     local d = U.dungeonDetailCur
     DG.EnsureQuestLane()
@@ -7515,7 +8579,6 @@ function U:RenderDungeonQuests()
     if not (d and child and pool) then return end
     DG.EnsureQuestListener()
     local list = DG.QuestList(d)
-    DG.BuildPreDone(list)
     DG.PrefetchQuestData(list)
     local nAll = #list
     local selInFull = false
@@ -7526,13 +8589,19 @@ function U:RenderDungeonQuests()
 
     local fhA = DG.FilterBranchHeads(list, "A")
     local fhH = DG.FilterBranchHeads(list, "H")
-    local cnt = { all = #fhA, A = #fhA, H = #fhH, todo = 0, done = 0 }
-    local doneN = 0
+    local nA, nH = 0, 0
+    for i = 1, #fhA do if not DG.IsOptQuest(fhA[i][1]) then nA = nA + 1 end end
+    for i = 1, #fhH do if not DG.IsOptQuest(fhH[i][1]) then nH = nH + 1 end end
+    local cnt = { all = nA, A = nA, H = nH, todo = 0, done = 0 }
+    local doneN, repN = 0, 0
     for i = 1, #fhA do
-        if DG.QuestDone(fhA[i][1]) then doneN = doneN + 1 end
+        if not DG.IsOptQuest(fhA[i][1]) then
+            if DG.QuestDone(fhA[i][1]) then doneN = doneN + 1 end
+            if DG.QuestRepeat(fhA[i][1]) then repN = repN + 1 end
+        end
     end
     cnt.done = doneN
-    cnt.todo = #fhA - doneN
+    cnt.todo = nA - doneN - repN
 
     local view = U.dungeonQView
     if view ~= "overview" then view = "list" end
@@ -7568,7 +8637,7 @@ function U:RenderDungeonQuests()
                 key, label = "qlist", L["列表"]
             end
             bt.__mode, bt.__key = "quest", key
-            bt:SetWidth((i <= 2) and 84 or 42)
+            bt:SetWidth((ns.WIDE_UI and DG.Q_BTN_EN[i]) and DG.Q_BTN_EN[i][2] or ((i <= 2) and 84 or 42))
             if n then
                 bt:SetText(label .. " " .. n)
             else
@@ -7613,6 +8682,10 @@ function U:RenderDungeonQuests()
                     bfs:SetPoint("CENTER", bt, "CENTER", 0, 0)
                 end
                 bfs:SetJustifyH("CENTER")
+                if ns.WIDE_UI and ns.FitFS then
+                    ns.FullText(bfs, bt:GetText())
+                    ns.FitFS(bfs, (bt:GetWidth() or 40) - (tex and 28 or 6), 10)
+                end
             end
         end
     end
@@ -7647,9 +8720,11 @@ function U:RenderDungeonQuests()
     local nVis, doneVis = 0, 0
     for i = 1, nAll do
         local q = list[i]
-        if q[2] == side or not q[2] then
-            nVis = nVis + 1
-            if DG.QuestDone(q[1]) then doneVis = doneVis + 1 end
+        if (q[2] == side or not q[2]) and not DG.IsOptQuest(q[1]) then
+            if not DG.QuestRepeat(q[1]) then
+                nVis = nVis + 1
+                if DG.QuestDone(q[1]) then doneVis = doneVis + 1 end
+            end
         end
     end
     local seg = ""
@@ -7664,14 +8739,15 @@ function U:RenderDungeonQuests()
     U.dungeonQuestSum:Hide()
     if U.dungeonQDoneTg then U.dungeonQDoneTg:SetChecked(status ~= "todo") end
 
-    local groups = { { kind = 1, rows = {} }, { kind = 2, rows = {} }, { kind = 3, rows = {} } }
+    local groups = { { kind = 1, rows = {} }, { kind = 2, rows = {} }, { kind = 3, rows = {} }, { kind = 4, rows = {} }, { kind = 5, rows = {} } }
     for i = 1, nAll do
         local q = list[i]
         if q[2] == side or not q[2] then
             local qn = q[5] or ""
-            local isItem = qn:find("^由物品", 1, true) ~= nil
+            local isItem = qn:find("^由物品", 1, true) ~= nil or qn:find("^Started by item", 1, true) ~= nil
                 or (qn == "" and q[8] and true or false)
-            local key = isItem and 3 or (q[8] and 2 or 1)
+            local gate = (ns.DungeonQuestGateDone and ns.DungeonQuestGateDone[q[1]]) and true or false
+            local key = DG.IsOptQuest(q[1]) and 4 or (gate and 5 or (isItem and 3 or (q[8] and 2 or 1)))
             local st = DG.QuestState(q[1])
             local hit = true
             if status == "done" then hit = (st == "done")
@@ -7684,14 +8760,14 @@ function U:RenderDungeonQuests()
     end
 
     local selOk = false
-    for gi = 1, 3 do
+    for gi = 1, 5 do
         for _, q in ipairs(groups[gi].rows) do
             if q[1] == U.dungeonQuestSel then selOk = true break end
         end
         if selOk then break end
     end
     if not selOk and not selInFull and not U.dungeonQDetExt and not U.dungeonQFlow then
-        local first = groups[1].rows[1] or groups[2].rows[1] or groups[3].rows[1]
+        local first = groups[1].rows[1] or groups[2].rows[1] or groups[3].rows[1] or groups[5].rows[1] or groups[4].rows[1]
         U.dungeonQuestSel = first and first[1] or nil
     end
 
@@ -7759,9 +8835,14 @@ function U:RenderDungeonQuests()
             r.sub:SetWordWrap(false)
             r.lv = MakeFS(r, DG.Q_FS_META, C_GREY, "LEFT")
             r.lv:SetPoint("TOPLEFT", r, "TOPLEFT", DG.Q_X_LV, -(DG.Q_ROW_H - DG.Q_FS_META) / 2 - 1)
+            r.optB = DG.MakeBadge(r, DG.Q_BADGE_OPT_BG)
+            r.eliteB = DG.MakeBadge(r, DG.Q_BADGE_ELITE_BG)
             r.preB = DG.MakeBadge(r, DG.Q_BADGE_PRE_BG)
             r.shareB = DG.MakeBadge(r, DG.Q_BADGE_SHARE_BG)
             r.raceB = DG.MakeBadge(r, DG.Q_BADGE_RACE_BG)
+            r.profB = DG.MakeBadge(r, DG.Q_BADGE_PROF_BG)
+            r.t05B = DG.MakeBadge(r, DG.Q_BADGE_T05_BG)
+            r.norecB = DG.MakeBadge(r, DG.Q_BADGE_NOREC_BG)
             r.meta = MakeFS(r, DG.Q_FS_META, C_GREY, "RIGHT")
             r.meta:SetPoint("TOPRIGHT", r, "TOPRIGHT", -6, -(DG.Q_ROW_H - DG.Q_FS_META) / 2 - 1)
             r:SetScript("OnEnter", function(self)
@@ -7779,7 +8860,7 @@ function U:RenderDungeonQuests()
         return r
     end
 
-    for gi = 1, 3 do
+    for gi = 1, 5 do
         local g = groups[gi]
         if #g.rows > 0 then
             nH = nH + 1
@@ -7789,8 +8870,8 @@ function U:RenderDungeonQuests()
                        cnt = MakeFS(child, DG.Q_FS_META, C_GREY, "RIGHT") }
                 hdr[nH] = hd
             end
-            hd.name:SetText(g.kind == 2 and L["副本内接取"]
-                or (g.kind == 3 and L["拾取物品接取"] or L["进本前先去接"]))
+            hd.name:SetText(g.kind == 4 and L["可选任务"] or (g.kind == 2 and L["副本内接取"]
+                or (g.kind == 3 and L["拾取物品接取"] or (g.kind == 5 and L["副本门口外完成"] or L["进本前先去接"]))))
             hd.name:ClearAllPoints()
             hd.name:SetPoint("TOPLEFT", child, "TOPLEFT", DG.Q_PAD + 4, y)
             hd.__vtop, hd.__vh, hd.__vgen = -y, DG.Q_HDR_H, DG.__vgen
@@ -7804,8 +8885,8 @@ function U:RenderDungeonQuests()
             for i = 1, #g.rows do
                 local q = g.rows[i]
                 local r = takeRow()
-                local st = DG.QuestState(q[1])
-                local col = (st == "done" and C_GREEN) or (st == "ready" and DG.Q_OV_READY) or (st == "active" and C_GOLD) or C_GREY
+                local st = DG.QuestBadgeState(q[1])
+                local col = DG.QStateColor(st)
                 local nm, hasName = DG.QuestName(q[1])
                 local ftex = q[2] and DG.Q_FAC_ICON[q[2]] or nil
                 if ftex then
@@ -7842,6 +8923,26 @@ function U:RenderDungeonQuests()
                 local bmax = DG.Q_X_LOC - 4
                 local bx = DG.Q_X_NAME + FSW(r.name) + DG.Q_BADGE_GAP
                 local ci = 0
+                if hasName and DG.IsNoRecQuest(q[1]) then
+                    bx = DG.PlaceBadge(r.norecB, bx, L["不推荐"], bmax)
+                else
+                    r.norecB:Hide()
+                end
+                if hasName and DG.IsT05Quest(q[1]) then
+                    bx = DG.PlaceBadge(r.t05B, bx, L["T0.5"], bmax)
+                else
+                    r.t05B:Hide()
+                end
+                if hasName and DG.IsOptQuest(q[1]) then
+                    bx = DG.PlaceBadge(r.optB, bx, L["可选"], bmax)
+                else
+                    r.optB:Hide()
+                end
+                if hasName and DG.IsEliteQuest(q[1]) then
+                    bx = DG.PlaceBadge(r.eliteB, bx, L["精英"], bmax)
+                else
+                    r.eliteB:Hide()
+                end
                 if hasName and clsList then
                     for k = 1, #clsList do
                         local cnm = DG.QClassLabel(clsList[k])
@@ -7856,6 +8957,12 @@ function U:RenderDungeonQuests()
                 local cbs = r.clsB
                 if type(cbs) == "table" then
                     for k = ci + 1, #cbs do cbs[k]:Hide() end
+                end
+                local pslug = hasName and DG.QuestProf(q[1]) or nil
+                if pslug then
+                    bx = DG.PlaceBadge(r.profB, bx, DG.ProfLabel(pslug), bmax)
+                else
+                    r.profB:Hide()
                 end
                 if hasName and q[9] then
                     bx = DG.PlaceBadge(r.preB, bx, L["前置"], bmax)
@@ -7877,7 +8984,19 @@ function U:RenderDungeonQuests()
                 else
                     r.raceB:Hide()
                 end
-                r.meta:SetText(hasName and (DG.Q_STATUS_TAG[st] or "") or L["暂时没有客户端数据"])
+                local stag = DG.Q_STATUS_TAG[st]
+                if st == "todo" and DG.QuestPreLocked(q[1]) then stag = L["前置未完成"] end
+                -- 英文状态较长：列表行用短词，完整状态在右侧详情
+                -- English statuses are long: short words in list rows; full status shows in the detail pane
+                if ns.WIDE_UI then
+                    if st == "ready" then stag = L["待上交"]
+                    elseif st == "todo" and DG.QuestPreLocked(q[1]) then stag = L["缺前置"] end
+                end
+                r.meta:SetText(hasName and (stag or "") or L["暂时没有客户端数据"])
+                if ns.WIDE_UI and ns.FitFS then
+                    r.meta:SetWidth(0)
+                    ns.FitFS(r.meta, 92, 10)
+                end
                 r.__metaCol = hasName and col or C_DARKGREY
                 r.meta:SetTextColor(Unpack(r.__metaCol))
                 r.meta:Show()
@@ -7952,6 +9071,114 @@ local function MapUsable(mapID)
     return ok and info ~= nil
 end
 
+function DG.QuestieNpcLoc(npcID)
+    if type(npcID) ~= "number" or npcID <= 0 then return nil end
+    if not (ns.QuestieOn and ns.QuestieOn()) then return nil end
+    local ql = _G.QuestieLoader
+    local m = type(ql) == "table" and ql._modules
+    local DB = type(m) == "table" and m.QuestieDB
+    if type(DB) ~= "table" or type(DB.QueryNPCSingle) ~= "function" then return nil end
+    local ok, sp = pcall(DB.QueryNPCSingle, npcID, "spawns")
+    if not ok or type(sp) ~= "table" then return nil end
+    local Z = type(m) == "table" and m.ZoneDB
+    local spare
+    for area, pts in pairs(sp) do
+        local an = tonumber(area)
+        if an and type(pts) == "table" then
+            local mp = an
+            if Z and type(Z.GetUiMapIdByAreaId) == "function" then
+                local okz, v = pcall(Z.GetUiMapIdByAreaId, Z, an)
+                if okz and type(v) == "number" and v > 0 then mp = v end
+            end
+            for i = 1, #pts do
+                local p = pts[i]
+                local x = type(p) == "table" and tonumber(p[1]) or nil
+                local y = type(p) == "table" and tonumber(p[2]) or nil
+                if x and y and x > 0 and y > 0 then
+                    local rec = { mp, x, y, "" }
+                    if MapUsable(mp) then return rec end
+                    spare = spare or rec
+                end
+            end
+        end
+    end
+    return spare
+end
+
+function DG.NpcLocFallback(npcID, slug)
+    if type(npcID) ~= "number" or npcID <= 0 then return nil, nil end
+    local loc = ns.NPCLoc and ns.NPCLoc[npcID]
+    if loc and loc[1] and loc[2] and loc[3] and MapUsable(loc[1]) then
+        return { loc[1], loc[2], loc[3] }, nil
+    end
+    local q = DG.QuestieNpcLoc(npcID)
+    if q and q[1] and MapUsable(q[1]) then
+        return { q[1], q[2], q[3] }, nil
+    end
+    local e = slug and ns.DungeonEntry and ns.DungeonEntry[slug]
+    if e and e[1] and MapUsable(e[1]) then
+        return { e[1], e[2], e[3] }, L["副本入口"]
+    end
+    if loc and loc[1] and loc[2] and loc[3] then return { loc[1], loc[2], loc[3] }, nil end
+    if q and q[1] and q[2] and q[3] then return { q[1], q[2], q[3] }, nil end
+    return nil, nil
+end
+
+DG.ENTRY_NEAR = 7
+DG.MARK_WORLD_ONLY = { [3216] = true }
+
+DG.ITEM_TAG_SKIP = {
+    ["守护者奇尔加"] = true,
+    ["博学者诺克"] = true,
+    ["梅森·康纳利"] = true,
+    ["雷克西·铜钳"] = true,
+}
+
+DG.Q_END_OBJ = {
+    [1193] = true,
+    [2278] = true,
+    [2945] = true,
+    [2951] = true,
+    [2952] = true,
+    [2953] = true,
+    [3373] = true,
+    [7761] = true,
+}
+
+DG.Q_END_INSTANCE = {
+    [5463] = true,
+    [8945] = true,
+}
+
+function DG.TriggerItemName(s)
+    if type(s) ~= "string" or s == "" then return nil end
+    local inner = s:match("由物品%[(.-)%]") or s:match("^Started by item %[(.-)%]")
+    if inner and inner ~= "" then return inner end
+    if s == "物品触发" or s == "未收录" then return nil end
+    if DG.ITEM_TAG_SKIP[s] then return nil end
+    return s
+end
+
+function DG.TriggerItemTag(name)
+    if type(name) == "string" and name ~= "" then
+        return L["物品触发"] .. " · " .. name
+    end
+    return L["物品触发"]
+end
+
+function DG.LocInDungeon(loc, slug, ref)
+    if type(loc) ~= "table" or not slug then return false end
+    if type(ref) == "number" and DG.MARK_WORLD_ONLY[ref] then return false end
+    local e = ns.DungeonEntry and ns.DungeonEntry[slug]
+    if type(e) ~= "table" then return false end
+    local map, x, y = tonumber(loc[1]), tonumber(loc[2]), tonumber(loc[3])
+    if not (map and x and y) or tonumber(e[1]) ~= map then return false end
+    local ex, ey = tonumber(e[2]), tonumber(e[3])
+    if not (ex and ey) then return false end
+    local dx, dy = x - ex, y - ey
+    return (dx * dx + dy * dy) <= (DG.ENTRY_NEAR * DG.ENTRY_NEAR)
+end
+
 function DG.MarkNPC(npcID, locOverride)
     local ver = select(4, GetBuildInfo()) or 0
     if ver < 16000 or ver > 16999 then
@@ -7961,6 +9188,7 @@ function DG.MarkNPC(npcID, locOverride)
         return
     end
     local loc = locOverride or (ns.NPCLoc and ns.NPCLoc[npcID])
+    if not loc then loc = DG.QuestieNpcLoc(npcID) end
     if not loc then
         if UIErrorsFrame and UIErrorsFrame.AddMessage then
             pcall(UIErrorsFrame.AddMessage, UIErrorsFrame, format(L["NPC #%d 未收录地图位置"], npcID), 1, 0.4, 0.4)
@@ -7974,14 +9202,12 @@ function DG.MarkNPC(npcID, locOverride)
         end
         return
     end
-    if UiMapPoint and UiMapPoint.CreateFromCoordinates and C_Map and C_Map.SetUserWaypoint
+    if C_Map and C_Map.SetUserWaypoint and _G.CreateVector2D
         and (not C_Map.CanSetUserWaypointOnMap or pcall(C_Map.CanSetUserWaypointOnMap, mapID)) then
-        local ok, pt = pcall(UiMapPoint.CreateFromCoordinates, mapID, loc[2] / 100, loc[3] / 100)
-        if ok and pt then
-            pcall(C_Map.SetUserWaypoint, pt)
-            if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
-                pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
-            end
+        local pt = { uiMapID = mapID, position = _G.CreateVector2D(loc[2] / 100, loc[3] / 100) }
+        pcall(C_Map.SetUserWaypoint, pt)
+        if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
+            pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
         end
     end
     if C_Map and C_Map.OpenWorldMap then
@@ -7991,10 +9217,10 @@ function DG.MarkNPC(npcID, locOverride)
     end
 end
 
-function DG.ShowNpcTip(owner, npcID, locOverride)
+function DG.ShowNpcTip(owner, npcID, locOverride, inDungeon)
     if not GameTooltip then return end
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
-    GameTooltip:AddLine(L["点击：在地图上标记该 NPC"], 1, 0.82, 0)
+    GameTooltip:AddLine(inDungeon and L["点击：在地图上标记此位置"] or L["点击：在地图上标记该 NPC"], 1, 0.82, 0)
     local loc = locOverride or (ns.NPCLoc and ns.NPCLoc[npcID])
     if loc then
         GameTooltip:AddLine(format("%s %.1f, %.1f", tostring(loc[4] or ""), loc[2], loc[3]), 0.75, 0.75, 0.75)
@@ -8026,10 +9252,10 @@ function DG.MarkEntrance(dungeonID)
         end
         return
     end
-    if UiMapPoint and UiMapPoint.CreateFromCoordinates and C_Map and C_Map.SetUserWaypoint
+    if C_Map and C_Map.SetUserWaypoint and _G.CreateVector2D
         and (not C_Map.CanSetUserWaypointOnMap or pcall(C_Map.CanSetUserWaypointOnMap, mapID)) then
-        local ok, pt = pcall(UiMapPoint.CreateFromCoordinates, mapID, loc[2] / 100, loc[3] / 100)
-        if ok and pt then pcall(C_Map.SetUserWaypoint, pt) end
+        local pt = { uiMapID = mapID, position = _G.CreateVector2D(loc[2] / 100, loc[3] / 100) }
+        pcall(C_Map.SetUserWaypoint, pt)
         if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
             pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
         end
@@ -8041,11 +9267,11 @@ function DG.MarkEntrance(dungeonID)
     end
 end
 
-function DG.ShowEntranceTip(owner)
+function DG.ShowEntranceTip(owner, dungeonID)
     if not GameTooltip then return end
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     GameTooltip:AddLine(L["点击：在地图上标记副本入口"], 1, 0.82, 0)
-    local d = U.dungeonDetailCur
+    local d = dungeonID and { id = dungeonID } or U.dungeonDetailCur
     local loc = d and ns.DungeonEntry and ns.DungeonEntry[d.id]
     if loc then
         local route = d and ns.DungeonEntryRoute and ns.DungeonEntryRoute[d.id]
@@ -8100,10 +9326,10 @@ function DG.MarkEntranceAt(dungeonID, idx)
         end
         return
     end
-    if UiMapPoint and UiMapPoint.CreateFromCoordinates and C_Map and C_Map.SetUserWaypoint
+    if C_Map and C_Map.SetUserWaypoint and _G.CreateVector2D
         and (not C_Map.CanSetUserWaypointOnMap or pcall(C_Map.CanSetUserWaypointOnMap, p.mapID)) then
-        local ok, wp = pcall(UiMapPoint.CreateFromCoordinates, p.mapID, p.x / 100, p.y / 100)
-        if ok and wp then pcall(C_Map.SetUserWaypoint, wp) end
+        local wp = { uiMapID = p.mapID, position = _G.CreateVector2D(p.x / 100, p.y / 100) }
+        pcall(C_Map.SetUserWaypoint, wp)
         if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
             pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
         end
@@ -8154,6 +9380,18 @@ function DG.CurQuestFlow(d)
     return f
 end
 
+function DG.QuestPageDefault(d)
+    local ps = DG.PlayerSide()
+    U.dungeonQSide = (ps == "A" or ps == "H") and ps or "A"
+    U.dungeonQView = "list"
+    U.dungeonQuestSel = nil
+    U.dungeonQDetExt = nil
+    U.dungeonQFlow = nil
+    if d and DG.CurQuestFlow(d) then
+        U.dungeonQFlow = true
+    end
+end
+
 function DG.FlowQuestRow(id)
     if not id then return nil end
     DG.EnsureRowByID()
@@ -8184,15 +9422,23 @@ end
 
 function DG.OpenQuest(id)
     if not id then return end
-    local row = DG.FlowQuestRow(id)
     U.dungeonQFlow = nil
     U.dungeonQuestSel = nil
     U.dungeonQDetExt = nil
-    if row then
+    local inList = false
+    local cur = U.dungeonDetailCur
+    if cur then
+        local ql = DG.QuestList(cur)
+        for i = 1, #ql do
+            if ql[i][1] == id then inList = true break end
+        end
+    end
+    if inList then
         U.dungeonQuestSel = id
     else
         local ext = ns.EnsureDungeonQuestExtInfo and ns.EnsureDungeonQuestExtInfo()
-        if ext and ext[id] then
+        local oq = ns.DungeonQuestObj
+        if (ext and ext[id]) or (type(oq) == "table" and oq[id]) then
             U.dungeonQDetExt = id
         else
             U.dungeonQuestSel = id
@@ -8226,9 +9472,14 @@ function DG.HideDetailRows(pool)
     for i = 1, #pool.chip do pool.chip[i]:Hide() end
     for i = 1, #pool.npc do pool.npc[i]:Hide() end
     for i = 1, #pool.jump do pool.jump[i]:Hide() end
+    if pool.spawn then for i = 1, #pool.spawn do pool.spawn[i]:Hide() end end
+    if pool.badge then for i = 1, #pool.badge do pool.badge[i]:Hide() end end
     pool.nLab, pool.nKv, pool.nTxt, pool.nNode, pool.nChip, pool.nNpc, pool.nJump = 0, 0, 0, 0, 0, 0, 0
+    pool.nSpawn = 0
+    pool.nBadge = 0
     if U.dungeonQDetName then U.dungeonQDetName:Hide() end
     if U.dungeonQDetSt then U.dungeonQDetSt:Hide() end
+    if U.dungeonQDetSearch then U.dungeonQDetSearch:Hide() end
 end
 
 function DG.FlowTakeTxt(child, pool)
@@ -8344,7 +9595,7 @@ function DG.FlowLine(child, pool, seg, x0, xEnd, y)
                 b.ic:SetTexture(DG.ItemIcon(tk.id))
                 b.ic:SetVertexColor(1, 1, 1, 1)
                 b.ic:Show()
-                txt = format("「%s%s」", DG.Q_FLOW_IDEO, inm)
+                txt = format(L["「%s%s」"], DG.Q_FLOW_IDEO, inm)
                 ob = "「"
             else
                 local nm, hasName = DG.QuestName(tk.id)
@@ -8352,14 +9603,14 @@ function DG.FlowLine(child, pool, seg, x0, xEnd, y)
                 col = C_LINK_Q
                 b.__npc, b.__q, b.__item = nil, tk.id, nil
                 if hasName then
-                    local st = DG.QuestState(tk.id)
-                    local mc = (st == "done" and C_GREEN) or (st == "ready" and DG.Q_OV_READY) or (st == "active" and C_GOLD) or C_GREY
+                    local st = DG.QuestBadgeState(tk.id)
+                    local mc = DG.QStateColor(st)
                     DG.FlowMark(b, st, mc)
-                    txt = format("《%s%s》", DG.Q_FLOW_IDEO, nm)
+                    txt = format(L["《%s%s》"], DG.Q_FLOW_IDEO, nm)
                     ob = "《"
                 else
                     DG.FlowMark(b, nil)
-                    txt = format("《%s》", nm)
+                    txt = format(L["《%s》"], nm)
                 end
             end
             b.__col = col
@@ -8435,11 +9686,11 @@ function DG.FlowStepText(seg)
             elseif tk.q then
                 local nm = DG.QuestName(tk.id)
                 if not nm or nm == "" then nm = tk.q end
-                s = format("《%s》", nm)
+                s = format(L["《%s》"], nm)
             elseif tk.i then
                 local nm, hasName = DG.ItemName(tk.id)
                 if not hasName or not nm or nm == "" then nm = tk.i end
-                s = format("「%s」", nm)
+                s = format(L["「%s」"], nm)
             else
                 s = tk.t
             end
@@ -8761,12 +10012,15 @@ function U:RenderQuestDetail()
     DG.SyncOverviewFlowCard()
 
     local q
-    local qlist = DG.QuestList(d)
-    DG.BuildPreDone(qlist)
-    for _, row in ipairs(qlist) do
-        if row[1] == U.dungeonQuestSel then q = row end
+    if U.dungeonQDetExt then
+        q = DG.ExtQuestRow(U.dungeonQDetExt)
+    else
+        local qlist = DG.QuestList(d)
+        for _, row in ipairs(qlist) do
+            if row[1] == U.dungeonQuestSel then q = row end
+        end
+        if not q and U.dungeonQuestSel then q = DG.QuestRowByID(U.dungeonQuestSel) end
     end
-    if U.dungeonQDetExt then q = DG.ExtQuestRow(U.dungeonQDetExt) end
 
     DG.HideDetailRows(pool)
     local y = -DG.Q_PAD
@@ -8813,6 +10067,48 @@ function U:RenderQuestDetail()
         end
         return f
     end
+    local function takeBadge()
+        pool.nBadge = (pool.nBadge or 0) + 1
+        local i = pool.nBadge
+        local b = pool.badge[i]
+        if not b then
+            b = DG.MakeBadge(child, DG.Q_BADGE_CLS_BG)
+            pool.badge[i] = b
+        end
+        return b
+    end
+    local function fitChip(b, text, col)
+        if col then DG.BadgeTint(b, col) end
+        local w = FSW(b.lab, 20) + DG.Q_BADGE_PAD * 2
+        if w < DG.Q_BADGE_MIN_W then w = DG.Q_BADGE_MIN_W end
+        if ns.hui and ns.hui.PaintSolidChip and b.__chipFill then
+            ns.hui.PaintSolidChip(b, text, b.__chipCol, w)
+        else
+            b.lab:SetText(text)
+            b:SetWidth(w)
+        end
+        b:Show()
+        return w
+    end
+    local function nodeClsChip(r, prow)
+        local cbs = r.clsB
+        if type(cbs) == "table" then
+            for k = 1, #cbs do cbs[k]:Hide() end
+        end
+        local pcls = prow and prow[15] or nil
+        local plist = pcls and DG.QClassList(pcls) or nil
+        if not (plist and #plist > 0) then
+            r.sub:SetWidth(detW - 18)
+            return 0
+        end
+        local cb = DG.ClsBadgeAt(r, 1)
+        local clab = DG.QClassLabel(plist[1]) or plist[1]
+        local cw = fitChip(cb, clab, DG.QClassColor(plist[1]))
+        cb:ClearAllPoints()
+        cb:SetPoint("TOPRIGHT", r, "TOPRIGHT", -12, -25)
+        r.sub:SetWidth(detW - 18 - cw - 8)
+        return cw
+    end
     local function takeNpc()
         pool.nNpc = pool.nNpc + 1
         local i = pool.nNpc
@@ -8834,15 +10130,61 @@ function U:RenderQuestDetail()
             mb:SetPoint("RIGHT", f.fs, "RIGHT", 74, 0)
             mb:SetScript("OnClick", function(self)
                 local p = self:GetParent()
-                if p.__npc then DG.MarkNPC(p.__npc, p.__loc) end
+                if p.__npc or p.__loc then
+                    DG.MarkNPC(p.__npc, p.__loc)
+                elseif UIErrorsFrame and UIErrorsFrame.AddMessage then
+                    pcall(UIErrorsFrame.AddMessage, UIErrorsFrame,
+                          L["该任务没有可标记的位置"], 1, 0.7, 0.3)
+                end
             end)
             mb:SetScript("OnEnter", function(self)
                 local p = self:GetParent()
-                if p.__npc then DG.ShowNpcTip(self, p.__npc, p.__loc) end
+                if p.__npc or p.__loc then DG.ShowNpcTip(self, p.__npc, p.__loc, p.__inDungeon) end
             end)
             mb:SetScript("OnLeave", function() GameTooltip:Hide() end)
             f.mark = mb
             pool.npc[i] = f
+        end
+        return f
+    end
+    local function markLabel(f, loc, force)
+        if not f.mark then return end
+        local inside = (force == true) or DG.LocInDungeon(loc, d.id, f.__npc)
+        f.__inDungeon = inside
+        f.mark:SetText(inside and L["副本"] or L["地图"])
+    end
+    local function takeSpawn()
+        pool.nSpawn = (pool.nSpawn or 0) + 1
+        local i = pool.nSpawn
+        local f = pool.spawn[i]
+        if not f then
+            f = CreateFrame("Button", nil, child)
+            f:SetSize(90, 22)
+            f:EnableMouse(true)
+            f:EnableMouseWheel(true)
+            f:SetScript("OnMouseWheel", function(_, delta)
+                DG.WheelScroll(U.dungeonQDet, U.dungeonQDetChild, delta)
+            end)
+            f.fs = MakeFS(f, DG.Q_FS_DET, C_DIM, "LEFT")
+            f.fs:SetWordWrap(false)
+            f.fs:SetPoint("LEFT", f, "LEFT", 0, 0)
+            f:SetScript("OnClick", function(self)
+                if self.__loc then DG.MarkNPC(self.__npc, self.__loc) end
+            end)
+            f:SetScript("OnEnter", function(self)
+                if self.fs then self.fs:SetTextColor(1, 1, 1) end
+                if not self.__loc or not GameTooltip then return end
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine(L["点击：在地图上标记此位置"], 1, 0.82, 0)
+                GameTooltip:AddLine(format("%s %.1f, %.1f", self.__zoneTxt or "",
+                                           self.__loc[2], self.__loc[3]), 0.75, 0.75, 0.75)
+                GameTooltip:Show()
+            end)
+            f:SetScript("OnLeave", function(self)
+                if self.fs then self.fs:SetTextColor(Unpack(C_DIM)) end
+                GameTooltip:Hide()
+            end)
+            pool.spawn[i] = f
         end
         return f
     end
@@ -8941,7 +10283,7 @@ function U:RenderQuestDetail()
                     DG.OpenQuest(r.__q[1])
                     return
                 end
-                if r.__npc then DG.MarkNPC(r.__npc, r.__loc) end
+                if r.__npc or r.__loc then DG.MarkNPC(r.__npc, r.__loc) end
             end)
             r.name = MakeFS(r, 14, C_TEXT, "LEFT")
             r.name:SetPoint("TOPLEFT", r, "TOPLEFT", 8, -3)
@@ -8961,14 +10303,12 @@ function U:RenderQuestDetail()
             r.sub:SetPoint("TOPLEFT", r, "TOPLEFT", 8, -23)
             r.sub:SetWidth(detW - 18)
             r.sub:SetWordWrap(false)
-            r.optB = DG.MakeBadge(r, DG.Q_BADGE_OPT_BG or DG.Q_BADGE_PRE_BG)
             pool.node[i] = r
         end
         if not r.__huiCard then
             r:SetBackdropColor(1, 1, 1, DG.LOOT_CARD_BG)
             r:SetBackdropBorderColor(1, 1, 1, DG.LOOT_CARD_EDGE)
         end
-        if r.optB then r.optB:Hide() end
         return r
     end
     local function takeChip()
@@ -9042,10 +10382,12 @@ function U:RenderQuestDetail()
         U.dungeonQDetGains = nil
         name:ClearAllPoints()
         name:SetPoint("TOPLEFT", child, "TOPLEFT", 0, -DG.Q_PAD)
+        name:SetWidth(DG.Q_DET_W - 8)
         name:SetText(L["点左侧任务查看详情"])
         name:SetTextColor(Unpack(C_GREY))
         name:Show()
         stf:Hide()
+        if U.dungeonQDetSearch then U.dungeonQDetSearch:Hide() end
         child:SetHeight(DG.Q_PAD + 24 + DG.Q_PAD)
         return
     end
@@ -9054,14 +10396,22 @@ function U:RenderQuestDetail()
     DG.RequestQuestRewardData(q[1])
 
     local nm, hasName = DG.QuestName(q[1])
-    local st = DG.QuestState(q[1])
-    local col = (st == "done" and C_GREEN) or (st == "ready" and DG.Q_OV_READY) or (st == "active" and C_GOLD) or C_GREY
+    local st = DG.QuestBadgeState(q[1])
+    local col = DG.QStateColor(st)
     if hasName then nm = nm .. format(" |cff9a9a9a#%d|r", q[1]) end
     name:SetText(nm)
     name:SetTextColor(Unpack(hasName and C_GOLD or C_GREY))
     name:ClearAllPoints()
     name:SetPoint("TOPLEFT", child, "TOPLEFT", 0, -DG.Q_PAD)
     name:Show()
+    local qsBtn = U.dungeonQDetSearch
+    if qsBtn then
+        qsBtn.__qid = q[1]
+        qsBtn:ClearAllPoints()
+        qsBtn:SetPoint("TOPRIGHT", child, "TOPRIGHT", 0, -DG.Q_PAD)
+        qsBtn:Show()
+        name:SetWidth(detW - 8 - qsBtn:GetWidth() - 8)
+    end
     y = -(DG.Q_PAD + 26)
     stf:SetText(hasName and (L["状态："] .. (DG.Q_STATUS_TAG[st] or "")) or L["暂时没有客户端数据"])
     stf:SetTextColor(Unpack(hasName and col or C_DARKGREY))
@@ -9085,14 +10435,14 @@ function U:RenderQuestDetail()
     do
         local push = DG.QLCall("IsPushableQuest", q[1])
         if push ~= nil then
-            shareSeg = DG.Hex(C_GREY) .. L["共享"] .. "：|r"
+            shareSeg = DG.Hex(C_GREY) .. L["共享"] .. L["：|r"]
                 .. (push and DG.Hex(C_GREEN) .. L["可分享"] .. "|r"
                         or DG.Hex(C_RED) .. L["不可共享"] .. "|r")
         end
     end
     if lvTxt ~= "" then
         local f = takeKv()
-        f:SetText(DG.Hex(C_GREY) .. L["可接等级"] .. "：|r" .. lvTxt
+        f:SetText(DG.Hex(C_GREY) .. L["可接等级"] .. L["：|r"] .. lvTxt
             .. (shareSeg and " · " .. shareSeg or ""))
         put(f, 24)
     elseif shareSeg then
@@ -9107,7 +10457,7 @@ function U:RenderQuestDetail()
             parts[#parts + 1] = DG.Hex(dc) .. tostring(d[1]) .. "|r"
         end
         local f = takeKv()
-        f:SetText(DG.Hex(C_GREY) .. L["任务难度"] .. "：|r" .. table.concat(parts, "  "))
+        f:SetText(DG.Hex(C_GREY) .. L["任务难度"] .. L["：|r"] .. table.concat(parts, "  "))
         put(f, 24)
     end
     local startNpcID = q[16]
@@ -9117,12 +10467,43 @@ function U:RenderQuestDetail()
     local slocFull = (smap and DG.LocText(smap, sx, sy, szone)) or DG.ZoneShort(q[6])
     local slocShort = (smap and DG.ZoneLabel(smap, szone)) or DG.ZoneShort(q[6])
     local where = q[5] or ""
+    if where == "" then
+        local slr0 = ns.DungeonQuestStartLoc and ns.DungeonQuestStartLoc[q[1]]
+        if slr0 and type(slr0[2]) == "string" and slr0[2] ~= "" then
+            where = slr0[2]
+        end
+    end
+    local startItem, itemStart
+    if not q[16] then
+        local slrI = ns.DungeonQuestStartLoc and ns.DungeonQuestStartLoc[q[1]]
+        if not (slrI and tonumber(slrI[1])) then
+            startItem = DG.TriggerItemName(where)
+            if startItem then
+                itemStart = true
+                where = DG.TriggerItemTag(startItem)
+            elseif where == "物品触发" or q[8] == true then
+                itemStart = true
+                where = L["物品触发"]
+            end
+        end
+    end
+    if itemStart then
+        slocFull, slocShort = L["副本"], L["副本"]
+    end
+    local wplain = where
     if where ~= "" and not q[16] then
         where = "|cffffd100" .. where .. "|r"
     end
-    if q[16] then
-        local nm = (q[17] and q[17] ~= "" and q[17]) or q[5] or ""
-        where = "|cffffd100" .. nm .. "|r" .. format(" |cff9a9a9a#%d|r", q[16])
+    do
+        local sid = q[16]
+        if not sid then
+            local slr1 = ns.DungeonQuestStartLoc and ns.DungeonQuestStartLoc[q[1]]
+            sid = slr1 and tonumber(slr1[1]) or nil
+        end
+        if sid then
+            local nm = (q[17] and q[17] ~= "" and q[17]) or q[5] or wplain
+            where = "|cffffd100" .. nm .. "|r" .. format(" |cff9a9a9a#%d|r", sid)
+        end
     end
     local whereFull, whereShort = where, where
     if slocFull and slocFull ~= "" then
@@ -9145,13 +10526,28 @@ function U:RenderQuestDetail()
                 f.fs:SetText(DG.Hex(C_GREY) .. L["起始："] .. "|r" .. whereShort .. suffix)
             end
             f.__npc = q[16] or (sn and sn[1]) or (slr and tonumber(slr[1])) or nil
-            f.__loc = (smap and { smap, sx, sy }) or (sn and sn[3] and { sn[3], sn[4], sn[5] }) or nil
-        else
-            f = takeKv()
-            f:SetText(DG.Hex(C_GREY) .. L["起始："] .. "|r" .. whereFull)
-            if FSW(f) > DG.Q_DET_W - 8 then
-                f:SetText(DG.Hex(C_GREY) .. L["起始："] .. "|r" .. whereShort)
+            local floc, ftag
+            if smap then
+                floc = { smap, sx, sy }
+            elseif sn and sn[3] then
+                floc = { sn[3], sn[4], sn[5] }
+            else
+                floc, ftag = DG.NpcLocFallback(f.__npc, d.id)
             end
+            if ftag then
+                f.fs:SetText(f.fs:GetText() .. DG.Hex(C_DIM) .. " · " .. ftag .. "|r")
+            end
+            f.__loc = floc
+            markLabel(f, floc, sn ~= nil)
+        else
+            f = takeNpc()
+            f.fs:SetText(DG.Hex(C_GREY) .. L["起始："] .. "|r" .. whereFull)
+            if FSW(f.fs) > DG.Q_DET_W - 76 then
+                f.fs:SetText(DG.Hex(C_GREY) .. L["起始："] .. "|r" .. whereShort)
+            end
+            f.__npc = nil
+            f.__loc = nil
+            markLabel(f, nil)
         end
         put(f, 24)
     elseif q[9] == nil and q[14] and d and ns.DungeonLoot then
@@ -9181,32 +10577,100 @@ function U:RenderQuestDetail()
         end
     end
     do
+        local slr = ns.DungeonQuestStartLoc and ns.DungeonQuestStartLoc[q[1]]
+        local sp = slr and slr[7]
+        if type(sp) == "table" and #sp > 0 then
+            local pts = {}
+            for i = 1, #sp do
+                local pt = sp[i]
+                if type(pt) == "table" then
+                    local pm, px, py = tonumber(pt[1]), tonumber(pt[2]), tonumber(pt[3])
+                    if pm and px and py then pts[#pts + 1] = { pm, px, py } end
+                end
+            end
+            if #pts > 0 then
+                local zone = slr[6] or ""
+                local hf = takeKv()
+                hf:SetText(DG.Hex(C_GREY) .. L["刷新位置"] .. L["："] .. zone .. "|r")
+                put(hf, 22)
+                local npcID = tonumber(slr[1])
+                local indent = 16
+                local rowY = y
+                local curX = indent
+                for i = 1, #pts do
+                    local pt = pts[i]
+                    local f = takeSpawn()
+                    f.fs:SetText(format("%.1f, %.1f", pt[2], pt[3]))
+                    local w = FSW(f.fs, 40) + 12
+                    if curX > indent and curX + w > detW - 8 then
+                        rowY = rowY - 22
+                        curX = indent
+                    end
+                    f.__npc = npcID
+                    f.__zoneTxt = DG.ZoneLabel(pt[1], zone) or zone
+                    f.__loc = { pt[1], pt[2], pt[3], f.__zoneTxt }
+                    f:SetSize(w, 22)
+                    f:ClearAllPoints()
+                    f:SetPoint("TOPLEFT", child, "TOPLEFT", curX, rowY)
+                    f:Show()
+                    curX = curX + w + 8
+                end
+                y = rowY - 24
+            end
+        end
+    end
+    do
         local en = DG.QuestEndNpc(q[1])
-        if en then
+        if DG.Q_END_INSTANCE[q[1]] and en then
+            local label = (en[6] and en[6] ~= "") and en[6] or L["副本内"]
+            local nm = (en[2] and en[2] ~= "") and en[2] or ""
+            local idp = en[1] and format(" #%d", en[1]) or ""
+            local f = takeKv()
+            f:SetText(DG.Hex(C_GREY) .. L["结束："] .. "|r" .. label .. " " .. nm .. idp)
+            put(f, 24)
+        elseif en then
             local enid, ename, emap, ex, ey, ezone = en[1], en[2], en[3], en[4], en[5], en[6]
+            local endObj = (not enid) and DG.Q_END_OBJ[q[1]] == true
             local txt
             if ename and ename ~= "" then
-                txt = "|cffffd100" .. ename .. "|r"
+                txt = (endObj and (L["物品触发"] .. " · ") or "") .. "|cffffd100" .. ename .. "|r"
                 if enid then txt = txt .. format(" |cff9a9a9a#%d|r", enid) end
             elseif enid then
                 txt = format("|cff9a9a9a#%d|r", enid)
             else
                 txt = ""
             end
-            local zlFull = DG.LocText(emap, ex, ey, ezone)
-            local zlShort = (emap and DG.ZoneLabel(emap, ezone)) or nil
+            local zlFull = endObj and L["副本"] or DG.LocText(emap, ex, ey, ezone)
+            local zlShort = endObj and L["副本"] or ((emap and DG.ZoneLabel(emap, ezone)) or nil)
             local txtFull, txtShort = txt, txt
             if zlFull and zlFull ~= "" then txtFull = txt .. " · " .. zlFull end
             if zlShort and zlShort ~= "" then txtShort = txt .. " · " .. zlShort end
             local f
+            local eloc, etag
             if emap and ex and ey and MapUsable(emap) then
+                eloc = { emap, ex, ey }
+            else
+                eloc, etag = DG.NpcLocFallback(enid, d.id)
+            end
+            if eloc then
+                local tag = etag and (DG.Hex(C_DIM) .. " · " .. etag .. "|r") or ""
+                f = takeNpc()
+                f.fs:SetText(DG.Hex(C_GREY) .. L["结束："] .. "|r" .. txtFull .. tag)
+                if FSW(f.fs) > DG.Q_DET_W - 76 then
+                    f.fs:SetText(DG.Hex(C_GREY) .. L["结束："] .. "|r" .. txtShort .. tag)
+                end
+                f.__npc = enid
+                f.__loc = eloc
+                markLabel(f, eloc)
+            elseif enid then
                 f = takeNpc()
                 f.fs:SetText(DG.Hex(C_GREY) .. L["结束："] .. "|r" .. txtFull)
                 if FSW(f.fs) > DG.Q_DET_W - 76 then
                     f.fs:SetText(DG.Hex(C_GREY) .. L["结束："] .. "|r" .. txtShort)
                 end
                 f.__npc = enid
-                f.__loc = { emap, ex, ey }
+                f.__loc = nil
+                markLabel(f, nil)
             else
                 f = takeKv()
                 f:SetText(DG.Hex(C_GREY) .. L["结束："] .. "|r" .. txtFull)
@@ -9227,41 +10691,97 @@ function U:RenderQuestDetail()
         else
             fac = L["双阵营共有"]
         end
-        f:SetText(DG.Hex(C_GREY) .. L["阵营"] .. "：|r"
+        f:SetText(DG.Hex(C_GREY) .. L["阵营"] .. L["：|r"]
             .. (facCol and DG.Hex(facCol) .. fac .. "|r" or fac))
         put(f, 24)
     end
     if q[15] then
         local f = takeKv()
-        f:SetText(DG.Hex(C_GREY) .. L["职业"] .. "：|r"
-            .. DG.Hex(DG.QClassColor(q[15])) .. format(L["%s专属"], q[15]) .. "|r")
+        f:SetText(DG.Hex(C_GREY) .. L["职业"] .. L["：|r"])
+        local lab = format(L["%s专属"], q[15])
+        local cb = takeBadge()
+        fitChip(cb, lab, DG.QClassColor(q[15]))
+        cb:ClearAllPoints()
+        cb:SetPoint("TOPLEFT", child, "TOPLEFT", FSW(f) + 2, y - 5)
         put(f, 24)
     end
     y = y - 4
 
     do
-        local nodes, seen = {}, { [q[1]] = true }
-        local function collect(row, depth)
-            if not row or depth > 30 or #nodes >= 30 then return end
-            local pre = row[9]
-            if not pre then return end
-            for k = #pre, 1, -1 do
-                local seg = pre[k]
-                if type(seg) == "number" and not seen[seg] then
-                    seen[seg] = true
-                    local prow = DG.QuestRowByID(seg) or DG.ExtQuestRow(seg)
-                    if not prow and ns.DungeonQuestPreExtra then
-                        local ex = ns.DungeonQuestPreExtra[seg]
-                        if ex then prow = { [1] = seg, [9] = ex } end
+        local chains = DG.QuestPreChains(q[1], 6, 30)
+        local nodes = {}
+        local total, deep, nc = 0, false, #chains
+        local minLen = 99
+        for ci = 1, nc do
+            total = total + #chains[ci]
+            if #chains[ci] > 1 then deep = true end
+            if #chains[ci] < minLen then minLen = #chains[ci] end
+        end
+        local common = 0
+        if nc > 1 then
+            local go = true
+            while go do
+                local pick
+                for ci = 1, nc do
+                    local ch = chains[ci]
+                    local idx = #ch - common
+                    if idx < 1 then
+                        go = false
+                        break
                     end
-                    collect(prow, depth + 1)
-                    nodes[#nodes + 1] = seg
-                elseif type(seg) == "string" then
-                    nodes[#nodes + 1] = seg
+                    local v = ch[idx]
+                    if pick == nil then
+                        pick = v
+                    elseif v ~= pick then
+                        go = false
+                        break
+                    end
+                end
+                if go then common = common + 1 end
+            end
+            if common >= minLen then common = minLen - 1 end
+            total = total - common * nc
+        end
+        if nc > 1 and deep and nc <= 4 and total <= 12 then
+            local shown = 0
+            for ci = 1, nc do
+                local ch = chains[ci]
+                local bodyLen = #ch - common
+                if bodyLen > 0 then
+                    shown = shown + 1
+                    nodes[#nodes + 1] = { chain = shown }
+                    for k = 1, bodyLen do nodes[#nodes + 1] = ch[k] end
                 end
             end
+            if common > 0 then
+                nodes[#nodes + 1] = { tail = true }
+                local last = chains[1]
+                for k = #last - common + 1, #last do nodes[#nodes + 1] = last[k] end
+            end
+        else
+            local seen = { [q[1]] = true }
+            local function collect(row, depth)
+                if not row or depth > 30 or #nodes >= 30 then return end
+                local pre = DG.PreForSide(row[9], DG.ViewSide())
+                if not pre then return end
+                for k = 1, #pre do
+                    local seg = pre[k]
+                    if type(seg) == "number" and not seen[seg] then
+                        seen[seg] = true
+                        local prow = DG.QuestRowByID(seg) or DG.ExtQuestRow(seg)
+                        if not prow and ns.DungeonQuestPreExtra then
+                            local ex = ns.DungeonQuestPreExtra[seg]
+                            if ex then prow = { [1] = seg, [9] = ex } end
+                        end
+                        collect(prow, depth + 1)
+                        nodes[#nodes + 1] = seg
+                    elseif type(seg) == "string" then
+                        nodes[#nodes + 1] = seg
+                    end
+                end
+            end
+            collect(q, 1)
         end
-        collect(q, 1)
         local pnote = ns.DungeonQuestPreNote and ns.DungeonQuestPreNote[q[1]]
         if #nodes > 0 or pnote then
             local f = takeLab()
@@ -9269,12 +10789,29 @@ function U:RenderQuestDetail()
             put(f, 20)
             local frontier = true
             for _, seg in ipairs(nodes) do
+                if type(seg) == "table" then
+                    local lab2 = takeLab()
+                    if seg.tail then
+                        lab2:SetText(L["汇合"])
+                    else
+                        lab2:SetText(format(L["前置任务链 %d"], seg.chain))
+                    end
+                    put(lab2, 18)
+                    frontier = true
+                else
                 local r = takeNode()
                 if type(seg) == "number" then
                     local pnm, pok = DG.QuestName(seg)
-                    local pst = DG.QuestState(seg)
-                    local pcol = (pst == "done" and C_GREEN) or (pst == "ready" and DG.Q_OV_READY) or (pst == "active" and C_GOLD) or C_GREY
-                    r.name:SetText(pok and (pnm .. format(" |cff9a9a9a#%d|r", seg)) or pnm)
+                    local pst = DG.QuestBadgeState(seg)
+                    local pcol = DG.QStateColor(pst)
+                    local prow = DG.QuestRowByID(seg) or DG.ExtQuestRow(seg)
+                    local plv = prow and prow[3] or nil
+                    if not plv and ns.DungeonQuestPreExtra and ns.DungeonQuestPreExtra[seg] then
+                        plv = ns.DungeonQuestPreExtra[seg].lv
+                    end
+                    local optTag = DG.IsOptPre(q[1], seg) and (" |cff7fd287[" .. L["可选"] .. "]|r") or ""
+                    r.name:SetText(pok and (pnm .. optTag .. format(" |cff9a9a9a#%d|r", seg)
+                        .. (plv and (" |cff9a9a9a· " .. format(L["%d 级可接"], plv) .. "|r") or "")) or (pnm .. optTag))
                     r.name:SetTextColor(Unpack(pok and pcol or C_GREY))
                     local stag = (pok and DG.Q_STATUS_TAG[pst]) or ""
                     local shex = format("%02x%02x%02x", pcol[1] * 255 + 0.5, pcol[2] * 255 + 0.5, pcol[3] * 255 + 0.5)
@@ -9285,29 +10822,22 @@ function U:RenderQuestDetail()
                     r.st:SetText(stag)
                     r.st:SetTextColor(Unpack(pok and pcol or C_GREY))
                     r.st:Show()
-                    if DG.IsOptPre(q[1], seg) then
-                        local nw = FSW(r.name, 0)
-                        DG.PlaceBadge(r.optB, (DG.Q_X_NAME or 0) + 8 + nw + 12, L["可选"], detW - 132)
-                    end
                     rowMark(r, pok and pst or nil, pcol)
-                    local prow = DG.QuestRowByID(seg) or DG.ExtQuestRow(seg)
                     local sub = ""
                     if prow then
                         sub = prow[5] or ""
                         local nl = DG.NodeLoc(seg, prow[16], prow[6])
                         if nl and nl ~= "" then sub = (sub ~= "" and (sub .. " · " .. nl) or nl) end
-                        if prow[3] then sub = sub .. " · " .. format(L["%d 级可接"], prow[3]) end
                     elseif ns.DungeonQuestPreExtra and ns.DungeonQuestPreExtra[seg] then
                         local ex = ns.DungeonQuestPreExtra[seg]
                         if ex.src and ex.src ~= "" then
                             sub = ex.src
-                            if ex.lv then sub = sub .. " · " .. format(L["%d 级可接"], ex.lv) end
                         elseif ex.npc and ex.npc ~= "" then
                             sub = ex.npc
-                            if ex.lv then sub = sub .. " · " .. format(L["%d 级可接"], ex.lv) end
                         end
                     end
                     if sub == "" then sub = L["本表未收录起始信息"] end
+                    nodeClsChip(r, prow)
                     r.sub:SetText(sub)
                     r.__q = prow
                     r.__preID = seg
@@ -9318,13 +10848,14 @@ function U:RenderQuestDetail()
                     local slp = (not nid) and (not sn) and ns.DungeonQuestStartLoc and ns.DungeonQuestStartLoc[seg] or nil
                     if slp and not nid then nid = tonumber(slp[1]) or nid end
                     r.__npc = nid
-                    r.__loc = (sn and sn[3] and { sn[3], sn[4], sn[5] })
-                        or (slp and slp[3] and { slp[3], slp[4], slp[5] }) or nil
+                    local sm, sx, sy = DG.StartLoc(seg, nid)
+                    r.__loc = (sm and { sm, sx, sy }) or (sn and sn[3] and { sn[3], sn[4], sn[5] }) or nil
                 else
                     r.name:SetText(seg)
                     r.name:SetTextColor(Unpack(C_GREY))
                     r.st:Hide()
                     rowMark(r, nil)
+                    nodeClsChip(r, nil)
                     r.sub:SetText(L["前置 ID 未收录，查不了状态"])
                     r.__q = nil
                     r.__preID = nil
@@ -9335,6 +10866,7 @@ function U:RenderQuestDetail()
                 r:SetPoint("TOPLEFT", child, "TOPLEFT", 0, y)
                 r:Show()
                 y = y - 38
+                end
             end
         end
         if pnote then
@@ -9356,9 +10888,10 @@ function U:RenderQuestDetail()
             for _, fq in ipairs(fol) do
                 local r = takeNode()
                 local fnm, fok = DG.QuestName(fq[1])
-                local fst = DG.QuestState(fq[1])
-                local fcol = (fst == "done" and C_GREEN) or (fst == "ready" and DG.Q_OV_READY) or (fst == "active" and C_GOLD) or C_GREY
-                r.name:SetText(fok and (fnm .. format(" |cff9a9a9a#%d|r", fq[1])) or fnm)
+                local fst = DG.QuestBadgeState(fq[1])
+                local fcol = DG.QStateColor(fst)
+                r.name:SetText(fok and (fnm .. format(" |cff9a9a9a#%d|r", fq[1])
+                    .. (fq[3] and (" |cff9a9a9a· " .. format(L["%d 级可接"], fq[3]) .. "|r") or "")) or fnm)
                 r.name:SetTextColor(Unpack(fok and fcol or C_GREY))
                 r.st:SetText(fok and (DG.Q_STATUS_TAG[fst] or "") or "")
                 r.st:SetTextColor(Unpack(fok and fcol or C_GREY))
@@ -9368,6 +10901,7 @@ function U:RenderQuestDetail()
                 local nl = DG.NodeLoc(fq[1], fq[16], fq[6])
                 if nl and nl ~= "" then sub = (sub ~= "" and (sub .. " · " .. nl) or nl) end
                 if sub == "" then sub = L["本表未收录起始信息"] end
+                nodeClsChip(r, fq)
                 r.sub:SetText(sub)
                 r.__q = fq
                 local fsn = (not fq[16]) and DG.QuestStartNpc(fq[1]) or nil
@@ -9431,7 +10965,6 @@ function U:RenderQuestDetail()
             local nw = colW - 46 - 8
             if questID then
                 r.__q = questID
-                nw = nw - 46 - 4
             else
                 r.__q = nil
             end
@@ -9443,6 +10976,7 @@ function U:RenderQuestDetail()
             end
             local inm, iok = DG.ItemName(iid)
             r.name:SetText(inm)
+            FitName(r.name)
             r.sub:SetText(DG.ItemMeta(iid) or "")
             if iok then
                 local qr, qg, qb = DG.QColor(DG.QualOf(iid))
@@ -9492,12 +11026,39 @@ function U:RenderQuestDetail()
             end
         end
     end
+    local pslug, pteach, pname = DG.QuestProf(q[1])
+    if pslug then
+        local f = takeLab()
+        f:SetText(L["所属专业"])
+        put(f, 20)
+        local t = takeTxt()
+        local txt = DG.ProfLabel(pslug) or pslug
+        if type(ns.HasProf) == "function" and not ns.HasProf(pslug) then
+            txt = txt .. " · " .. L["当前角色未学这个专业"]
+        end
+        t:SetText(txt)
+        t:SetTextColor(Unpack(C_TEXT))
+        local h = FSH(t)
+        put(t, (type(h) == "number" and h or 18) + 4)
+        y = y - 2
+    end
     local rew = q[10]
     if rew and #rew > 0 then
         local f = takeLab()
         f:SetText(L["任务奖励"])
         put(f, 20)
         y = y - renderChips(rew, 2) * 52 - 2
+    end
+    if pteach then
+        local tn = DG.SpellLabel(pteach) or (pname and L[pname])
+        if tn then
+            local t = takeTxt()
+            t:SetText(format(L["学会技能：%s"], tn))
+            t:SetTextColor(0.86, 0.80, 0.58)
+            local h = FSH(t)
+            put(t, (type(h) == "number" and h or 18) + 4)
+            y = y - 2
+        end
     end
     do
         local seg = DG.GainsSegs(q)
@@ -9528,6 +11089,7 @@ function U:RenderQuestDetail()
     for i = pool.nNode + 1, #pool.node do pool.node[i]:Hide() end
     for i = pool.nChip + 1, #pool.chip do pool.chip[i]:Hide() end
     for i = pool.nNpc + 1, #pool.npc do pool.npc[i]:Hide() end
+    for i = (pool.nSpawn or 0) + 1, #pool.spawn do pool.spawn[i]:Hide() end
 
     child:SetHeight(math.max(10, -y + 12))
     DG.ClampScroll(U.dungeonQDet, child, keepDet)
@@ -9641,7 +11203,7 @@ function U:RenderDungeonGuide()
             for i = 1, #g.bosses do
                 local b = g.bosses[i]
                 local cn = DG.GuideBossName(d.id, b.en)
-                rows[#rows + 1] = { t = (cn ~= b.en) and (cn .. "（" .. b.en .. "）") or b.en,
+                rows[#rows + 1] = { t = (cn ~= b.en) and (cn .. L["（"] .. b.en .. L["）"]) or b.en,
                                     c = C_GOLD, x = 0, gap = 3 }
                 rows[#rows + 1] = { t = b.text, c = C_TEXT, x = 0, gap = 9 }
             end
@@ -9713,6 +11275,7 @@ function U:SetDungeonTab(tab)
     DB().dungeonTab = t
     U.dungeonQDetKey = nil
     U.dungeonQListKey = nil
+    if t == "quest" then DG.QuestPageDefault(U.dungeonDetailCur) end
     U:RenderDungeonTab()
     ns.PlaySound(1)
 end
@@ -9770,7 +11333,7 @@ function U:RenderDungeonTab()
     DG.ApplyDetailChrome(cur)
 end
 DG.CAPSULE_LIFT = 20
-DG.CAPSULE_W = 82
+DG.CAPSULE_W = 72
 local function BuildSubTabs()
     local defs = {
         { key = "Dungeons", text = L["5人本"], width = DG.CAPSULE_W },
@@ -9786,11 +11349,21 @@ local function BuildSubTabs()
             { key = "Tier", text = L["职业指南"] },
             { key = "PvP", text = L["PvP"] },
             { key = "Gear", text = L["装备库"] },
+            { key = "QuestSearch", text = L["搜索"] },
         }) do
-            if ns.ModuleOn(t.key) then
-                defs[#defs + 1] = { key = t.key, text = t.text, width = DG.CAPSULE_W }
-            end
+            defs[#defs + 1] = { key = t.key, text = t.text, width = DG.CAPSULE_W }
         end
+    end
+    if ns.WIDE_UI then
+        -- 英文标签更长：按文字宽度给每个页签定宽 / English labels are longer: size each tab to its text
+        local probe = U.panel:CreateFontString()
+        probe:SetFont(Fnt(14))
+        for _, t in ipairs(defs) do
+            probe:SetText(t.text)
+            local w = probe:GetStringWidth() or 0
+            if type(w) == "number" and w > 0 then t.width = math.max(56, math.ceil(w) + 18) end
+        end
+        probe:Hide()
     end
     local BTN_H = IsHui() and 20 or 26
     local GAP = IsHui() and 0 or 6
@@ -9857,7 +11430,7 @@ function ns.ApplyTabVisibility()
     for _, tab in ipairs(U.subTabs) do
         local bt = tab.button
         if bt then
-            local show = (cfg[tab.key] ~= false)
+            local show = (cfg[tab.key] ~= false) and ns.ModuleOn(tab.key)
             bt:SetShown(show)
             if show then
                 bt:ClearAllPoints()
@@ -9879,14 +11452,14 @@ function ns.ApplyTabVisibility()
     if U.subCtrl then
         local vis = {}
         for _, tab in ipairs(U.subTabs) do
-            if cfg[tab.key] ~= false and tab.button then vis[#vis + 1] = tab.button end
+            if cfg[tab.key] ~= false and ns.ModuleOn(tab.key) and tab.button then vis[#vis + 1] = tab.button end
         end
         U.subCtrl:AttachButtons(vis)
     end
     local cur = U.curSub
-    if cur and cfg[cur] == false then
+    if cur and (cfg[cur] == false or not ns.ModuleOn(cur)) then
         U.curSub = firstVis
-        if U.built then U:SwitchSub(firstVis) end
+        if U.built and firstVis then U:SwitchSub(firstVis) end
     end
 end
 
@@ -9924,6 +11497,9 @@ function U:EnsureBuilt(k)
     elseif k == "Gear" and ns.GearModule and U.gearPage then
         U.subBuilt[k] = true
         ns.GearModule.Build(U.gearPage)
+    elseif k == "QuestSearch" and ns.QuestSearchModule and U.questSearchPage then
+        U.subBuilt[k] = true
+        ns.QuestSearchModule.Build(U.questSearchPage)
     end
 end
 
@@ -9951,15 +11527,18 @@ function U:SwitchSub(key)
         k = "PvP"
     elseif key == "Gear" and ns.ModuleOn("Gear") then
         k = "Gear"
+    elseif key == "QuestSearch" and ns.ModuleOn("QuestSearch") then
+        k = "QuestSearch"
     end
     U.curSub = k
     DB().subTab = k
     DG.Gate.HideUI()
-    ns.OpenPerf.Begin(({ Dungeons = "副本", Raids = "团本", Professions = "专业", Explore = "探索", Collections = "收藏", Factions = "阵营", Bis = "BIS", Tier = "职业指南", PvP = "PvP", Gear = "装备库" })[k] or k)
+    ns.OpenPerf.Begin(({ Dungeons = "副本", Raids = "团本", Professions = "专业", Explore = "探索", Collections = "收藏", Factions = "阵营", Bis = "BIS", Tier = "职业指南", PvP = "PvP", Gear = "装备库", QuestSearch = "搜索" })[k] or k)
     local isDun, isRaid, isProf, isExpl, isColl, isBis, isTier = (k == "Dungeons"), (k == "Raids"), (k == "Professions"), (k == "Explore"), (k == "Collections"), (k == "Bis"), (k == "Tier")
     local isPvP = (k == "PvP")
     local isFac = (k == "Factions")
     local isGear = (k == "Gear")
+    local isQS = (k == "QuestSearch")
     local function applyPages()
         if U.dungeonPage then U.dungeonPage:SetShown(isDun) end
         if U.raidPage then U.raidPage:SetShown(isRaid) end
@@ -9971,6 +11550,7 @@ function U:SwitchSub(key)
         if U.pvpPage then U.pvpPage:SetShown(isPvP) end
         if U.factionPage then U.factionPage:SetShown(isFac) end
         if U.gearPage then U.gearPage:SetShown(isGear) end
+        if U.questSearchPage then U.questSearchPage:SetShown(isQS) end
     end
     applyPages()
     if isRaid then
@@ -10006,6 +11586,11 @@ function U:SwitchSub(key)
     elseif isGear and ns.GearModule then
         U:EnsureBuilt("Gear")
         ns.GearModule.Open()
+    elseif isQS then
+        U:EnsureBuilt("QuestSearch")
+        if ns.QuestSearchModule and ns.QuestSearchModule.Open then
+            ns.QuestSearchModule.Open()
+        end
     end
     applyPages()
     ns.OpenPerf.Mark("就绪")
@@ -10058,6 +11643,10 @@ function U:UpdateActiveSub()
         if ns.GearModule then ns.GearModule.Refresh() end
         return
     end
+    if self.curSub == "QuestSearch" then
+        if ns.QuestSearchModule then ns.QuestSearchModule.Refresh() end
+        return
+    end
     self:UpdateDungeons()
 end
 
@@ -10087,6 +11676,8 @@ function U:Build()
         U.curSub = "Factions"
     elseif saved == "Gear" and ns.ModuleOn("Gear") then
         U.curSub = "Gear"
+    elseif saved == "QuestSearch" and ns.ModuleOn("QuestSearch") then
+        U.curSub = "QuestSearch"
     else
         U.curSub = "Dungeons"
     end
@@ -10125,6 +11716,9 @@ function U:Build()
         U.gearPage = CreateFrame("Frame", nil, panel)
         U.gearPage:SetAllPoints(panel)
         U.gearPage:Hide()
+        U.questSearchPage = CreateFrame("Frame", nil, panel)
+        U.questSearchPage:SetAllPoints(panel)
+        U.questSearchPage:Hide()
     end
 
     U.dungeonBuilt = false

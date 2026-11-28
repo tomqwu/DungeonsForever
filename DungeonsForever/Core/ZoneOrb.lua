@@ -16,6 +16,7 @@ local GAP = 8
 local SLIDE = 26
 local CLOSE_S = 36
 local SIDE_S = 29
+local STATUS_CARD_H = 84
 
 local FOOD_CUE = "Interface\\AddOns\\DungeonsForever\\Media\\Voice\\todo_food.ogg"
 local RESTED_CUE = "Interface\\AddOns\\DungeonsForever\\Media\\Voice\\todo_rested.ogg"
@@ -35,7 +36,6 @@ local cards, heads, subRows, row, btnOpen, btnSkip, btnBlock, manage, moreText
 local Tip, HideTip
 local closeBtn, gear, opts, optCbs
 local foodMenu, foodRows, foodCatch, FoodMenuClose = nil, {}, nil, nil
-local orbMenu, menuOpenedAt = nil, 0
 local job = nil
 local current = nil
 local hovered = false
@@ -45,9 +45,110 @@ local hideToken = 0
 local closePending = false
 local lastN = -1
 local pulseFrame, pulseT = nil, 0
+local orbSizeDirty = false
+O.rareList = {}
+local function StatusCardH()
+    return STATUS_CARD_H
+end
 
 local function Cfg()
     return ns.ZoneHint and ns.ZoneHint.CFG and ns.ZoneHint.CFG() or {}
+end
+
+local function StatusName()
+    local db = ns.DB and ns.DB()
+    if db and db.ui and db.ui.statusCard and type(db.ui.statusCard.targetName) == "string" then
+        return db.ui.statusCard.targetName
+    end
+    return ""
+end
+
+local function PingMacroFor(name)
+    return "/cleartarget\n/target " .. name .. "\n/stopmacro [noexists][dead]\n/ping [@target] Attack"
+end
+
+function O.SyncPing()
+    if not orb then return end
+    local name = StatusName()
+    orb.pingTarget = name
+    orb.pingMacro = (name ~= "" and PingMacroFor(name)) or nil
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then
+        orb.pingDirty = true
+        return
+    end
+    orb.pingDirty = nil
+    if orb.SetAttribute then orb:SetAttribute("macrotext", orb.pingMacro) end
+end
+
+function O.CurDungeonId()
+    if type(GetInstanceInfo) ~= "function" then return nil end
+    local ok, nm, itype, _, _, _, _, _, iid = pcall(GetInstanceInfo)
+    if not ok then return nil end
+    local inside = (type(itype) == "string" and itype ~= "none") or (type(iid) == "number" and iid > 0)
+    if not inside and type(IsInInstance) == "function" then
+        local ok2, v = pcall(IsInInstance)
+        if ok2 and v then inside = true end
+    end
+    if not inside then return nil end
+    if type(nm) ~= "string" or nm == "" then return nil end
+    local dd = ns.DungeonData and ns.DungeonData.dungeons
+    if type(dd) ~= "table" then return nil end
+    local same = (ns.ZoneHint and ns.ZoneHint.SameName) or function(a, b) return a == b end
+    local pref
+    for i = 1, #dd do
+        local d = dd[i]
+        if type(d) == "table" and d.id then
+            if same(nm, d.name) or same(nm, d.nameEn) then return d.id end
+            if not pref and type(d.name) == "string" and #nm >= 2 and string.find(d.name, nm, 1, true) == 1 then pref = d.id end
+        end
+    end
+    return pref
+end
+
+function O.RareNamesFor(id)
+    local out = {}
+    if not id or not (ns.MapUI and ns.MapUI.BossesFor) then return out end
+    local bs = ns.MapUI.BossesFor(id)
+    if type(bs) ~= "table" then return out end
+    for i = 1, #bs do
+        local b = bs[i]
+        if b and b.rare and type(b.zh) == "string" and b.zh ~= "" then out[#out + 1] = b.zh end
+    end
+    return out
+end
+
+function O.RotateRare()
+    if #O.rareList == 0 then return end
+    local db = ns.DB and ns.DB()
+    if not db then return end
+    db.ui = db.ui or {}
+    db.ui.statusCard = db.ui.statusCard or {}
+    local sc = db.ui.statusCard
+    local cur = sc.targetName or ""
+    local idx
+    for i = 1, #O.rareList do
+        if O.rareList[i] == cur then idx = i break end
+    end
+    if not (cur == "" or idx) then return end
+    local ni = (idx or 0) % #O.rareList + 1
+    sc.targetName = O.rareList[ni]
+    sc.rareIdx = ni
+    if O.SyncPing then O.SyncPing() end
+    if O.Refresh then O.Refresh() end
+end
+
+local function InCombat()
+    return type(InCombatLockdown) == "function" and InCombatLockdown()
+end
+O.InCombat = InCombat
+
+local function IsEditingText()
+    if type(cards) ~= "table" then return false end
+    for i = 1, #cards do
+        local c = cards[i]
+        if c and c.edit and c.edit.HasFocus and c.edit:HasFocus() then return true end
+    end
+    return false
 end
 
 local VOICE_SEC = {
@@ -84,6 +185,13 @@ local function VoiceDrain()
         return
     end
     local it = table.remove(vq, 1)
+    if it.check then
+        local okc, yes = pcall(it.check)
+        if not okc or yes ~= true then
+            VoiceDrain()
+            return
+        end
+    end
     if not it.force and Cfg().voice ~= true then
         vq = {}
         return
@@ -100,7 +208,7 @@ local function VoiceDrain()
     if #vq > 0 then VoiceDrain() end
 end
 
-function O.SayVoice(path, urgent)
+function O.SayVoice(path, urgent, check)
     if type(path) ~= "string" then return end
     if urgent == true then
         if vHandle and type(StopSound) == "function" then pcall(StopSound, vHandle) end
@@ -115,12 +223,17 @@ function O.SayVoice(path, urgent)
         end
         if #vq >= 4 then return end
     end
-    vq[#vq + 1] = { path = path, force = (urgent == true) }
+    vq[#vq + 1] = { path = path, force = (urgent == true), check = check }
     VoiceDrain()
 end
 
 local function ApplyOrbSize()
     if not orb then return end
+    if InCombat() then
+        orbSizeDirty = true
+        return
+    end
+    orbSizeDirty = false
     local sz = tonumber(Cfg().icon) or 32
     if sz < 20 then sz = 20 end
     if sz > 44 then sz = 44 end
@@ -177,6 +290,7 @@ local function SavePos()
 end
 
 local function ApplyPos()
+    if InCombat() then return end
     local c = Cfg()
     local o = c.orb
     orb:ClearAllPoints()
@@ -211,13 +325,27 @@ function O.ArmGhost()
     end)
 end
 
+local function CombatHide()
+    if not panel then return end
+    closePending = true
+    hideToken = hideToken + 1
+    job = nil
+    if tweener then tweener:Hide() end
+    if panel.escProxy and panel.escProxy:IsShown() then panel.escProxy:Hide() end
+    if panel:IsShown() then
+        panel:SetAlpha(0)
+        if panel.hoverCatch then panel.hoverCatch:EnableMouse(false) end
+    end
+end
+
 local function Close()
+    if IsEditingText() then return end
     if not panel or not panel:IsShown() then
         closePending = false
         return
     end
-    if InCombatLockdown and InCombatLockdown() then
-        closePending = true
+    if InCombat() then
+        CombatHide()
         return
     end
     closePending = false
@@ -228,18 +356,34 @@ local function Close()
     end, function()
         panel:Hide()
         panel:SetAlpha(1)
+        if panel.hoverCatch then panel.hoverCatch:EnableMouse(true) end
     end)
 end
 
 local function FlushClose()
     if not closePending then return end
-    if InCombatLockdown and InCombatLockdown() then
+    if InCombat() then
         if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
             C_Timer.After(0.2, FlushClose)
         end
         return
     end
-    Close()
+    closePending = false
+    hideToken = hideToken + 1
+    job = nil
+    if tweener then tweener:Hide() end
+    if panel then
+        if panel:IsShown() then panel:Hide() end
+        panel:SetAlpha(1)
+        if panel.hoverCatch then panel.hoverCatch:EnableMouse(true) end
+    end
+end
+
+local function PanelHover()
+    if not (panel and panel:IsShown()) then return false end
+    if not _G.MouseIsOver then return false end
+    local ok, on = pcall(_G.MouseIsOver, panel)
+    return ok and on and true or false
 end
 
 local function StartHideTimer(keep)
@@ -252,8 +396,19 @@ local function StartHideTimer(keep)
         if my ~= hideToken then return end
         if foodMenu and foodMenu:IsShown() then return end
         if opts and opts:IsShown() then return end
-        if panel and panel:IsShown() and not hovered then Close() end
+        if IsEditingText() then return end
+        if panel and panel:IsShown() and not hovered and not PanelHover() then Close() end
     end)
+end
+
+local function HoverOn()
+    hovered = true
+    hideToken = hideToken + 1
+end
+
+local function HoverOff()
+    hovered = false
+    StartHideTimer()
 end
 
 local function SubText(s)
@@ -369,6 +524,11 @@ local function MakeCard(i)
     card.act2:Hide()
     card.act3 = ns.CreateButton(card)
     card.act3:SetSize(74, 22)
+    card.act3:SetScript("OnClick", function()
+        ns.PlaySound(1)
+        if card.onAct3 then card.onAct3() end
+        if O.Refresh then O.Refresh() end
+    end)
     card.act3:SetScript("OnEnter", function()
         if card.hint3 then Tip(card.act3, card.hint3, nil) end
     end)
@@ -382,8 +542,114 @@ local function MakeCard(i)
     card.stat:SetWidth(150)
     card.stat:SetTextColor(FAINT[1], FAINT[2], FAINT[3])
     card.stat:Hide()
+    card.status = card:CreateFontString(nil, "OVERLAY")
+    card.status:SetFont(ns.FONT, 14, "")
+    card.status:SetPoint("LEFT", card.title, "RIGHT", 8, 0)
+    card.status:SetJustifyH("LEFT")
+    card.status:SetWordWrap(false)
+    card.status:SetWidth(150)
+    card.status:SetTextColor(DIM[1], DIM[2], DIM[3])
+    card.status:Hide()
+    card.edit = CreateFrame("EditBox", nil, card, "BackdropTemplate")
+    card.edit:SetHeight(22)
+    card.edit:SetAutoFocus(false)
+    card.edit:SetFont(ns.FONT, 12, "")
+    card.edit:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
+    card.edit:SetTextInsets(6, 6, 0, 0)
+    card.edit:SetPoint("TOPLEFT", card, "TOPLEFT", 50, -30)
+    card.edit:SetPoint("TOPRIGHT", card, "TOPRIGHT", -10, -30)
+    if ns.hui and ns.hui.SkinPopup and ns.hui.layer then
+        ns.hui.SkinPopup(card.edit, 6, "both", ns.hui.layer.L1)
+    end
+    card.edit.ph = card.edit:CreateFontString(nil, "OVERLAY")
+    card.edit.ph:SetFont(ns.FONT, 12, "")
+    card.edit.ph:SetPoint("LEFT", card.edit, "LEFT", 7, 0)
+    card.edit.ph:SetTextColor(FAINT[1], FAINT[2], FAINT[3])
+    card.edit.ph:SetText(L["输入目标名字"])
+    card.edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    card.edit:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    card.edit:SetScript("OnTextChanged", function(self)
+        if self.__dfSet then return end
+        local name = (self:GetText() or ""):match("^%s*(.-)%s*$") or ""
+        if name == "" then self.ph:Show() else self.ph:Hide() end
+        if card.__dfStatusShown and card.status then
+            card.status:SetText((name ~= "" and name) or L["未设置"])
+        end
+        local db = ns.DB and ns.DB()
+        if db then
+            db.ui = db.ui or {}
+            db.ui.statusCard = db.ui.statusCard or {}
+            db.ui.statusCard.targetName = name
+        end
+        if O.SyncPing then O.SyncPing() end
+    end)
+    card.edit:Hide()
+    card.guide = card:CreateFontString(nil, "OVERLAY")
+    card.guide:SetFont(ns.FONT, 12, "")
+    card.guide:SetPoint("TOPLEFT", card, "TOPLEFT", 50, -56)
+    card.guide:SetJustifyH("LEFT")
+    card.guide:SetWordWrap(false)
+    card.guide:SetWidth(PANEL_W - PAD * 2 - 60)
+    card.guide:SetTextColor(FAINT[1], FAINT[2], FAINT[3])
+    card.guide:Hide()
     cards[i] = card
     return card
+end
+
+local function PaintStatusCard(card, it)
+    local eb = card.edit
+    if eb and eb.HasFocus and eb:HasFocus() then
+        eb:Show()
+        return StatusCardH()
+    end
+    card.title:SetText(it.title or L["状态卡"])
+    card.text:SetText("")
+    card.text:Hide()
+    card.name:SetText("")
+    card.name:Hide()
+    if card.chip then card.chip:Hide() end
+    card.act:Hide()
+    card.act2:Hide()
+    card.act3:Hide()
+    card.stat:Hide()
+    card.onAct, card.onAct2, card.onAct3 = nil, nil, nil
+    card.hint, card.hint2, card.hint3 = nil, nil, nil
+    card.cardHint = nil
+    card.__dfStatusShown = true
+    card:EnableMouse(false)
+    card:SetScript("OnEnter", nil)
+    card:SetScript("OnLeave", nil)
+    if it.icon then
+        card.icon:SetTexture(it.icon)
+        card.icon:ClearAllPoints()
+        card.icon:SetPoint("TOPLEFT", card, "TOPLEFT", 10, -10)
+        card.icon:Show()
+    else
+        card.icon:Hide()
+    end
+    local name = StatusName()
+    local tw = card.title:GetStringWidth() or 40
+    card.title:SetWidth(tw + 4)
+    card.status:ClearAllPoints()
+    card.status:SetPoint("LEFT", card.title, "RIGHT", 8, 0)
+    local avail = (PANEL_W - PAD * 2) - (50 + tw + 4 + 8) - 10
+    if avail < 40 then avail = 40 end
+    card.status:SetWidth(avail)
+    card.status:SetText((name ~= "" and name) or L["未设置"])
+    card.status:Show()
+    if card.guide then
+        card.guide:SetText(L["填好名字后，右键待办圆球"])
+        card.guide:Show()
+    end
+    eb.__dfSet = true
+    eb:SetText(name)
+    eb.__dfSet = false
+    if name == "" then eb.ph:Show() else eb.ph:Hide() end
+    eb:ClearAllPoints()
+    eb:SetPoint("TOPLEFT", card, "TOPLEFT", 50, -30)
+    eb:SetPoint("TOPRIGHT", card, "TOPRIGHT", -10, -30)
+    eb:Show()
+    return StatusCardH()
 end
 
 local function MakeHead(i)
@@ -420,11 +686,19 @@ end
 
 Tip = function(owner, title, desc, foot)
     if not (GameTooltip and owner) then return end
+    hovered = true
+    hideToken = hideToken + 1
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     GameTooltip:ClearLines()
     GameTooltip:AddLine(title or "", 1, 1, 1, true)
     AddGray(desc)
-    AddAccent(foot)
+    if type(foot) == "table" then
+        for i = 1, #foot do
+            GameTooltip:AddLine(foot[i], 0.82, 0.86, 0.90, true)
+        end
+    else
+        AddAccent(foot)
+    end
     GameTooltip:Show()
 end
 
@@ -471,16 +745,8 @@ local function OpenQuestPage(qid, slug)
     elseif ns.Open then
         pcall(ns.Open)
     end
-    U.dungeonQView = "list"
-    U.dungeonQFlow = nil
-    U.dungeonQuestSel = qid
-    U.dungeonQListKey = nil
-    U.dungeonQDetKey = nil
-    local DG = ns.DungeonDG or (ns.ProfHost and ns.ProfHost.DG)
-    local row = (DG and DG.QuestRowByID) and DG.QuestRowByID(qid) or nil
-    local qsd = (type(row) == "table") and row[2] or nil
-    if (qsd == "A" or qsd == "H") and U.dungeonQSide ~= qsd then U.dungeonQSide = qsd end
     if U.SetDungeonTab then pcall(U.SetDungeonTab, U, "quest") end
+    if U.SelectDungeonQuest then U:SelectDungeonQuest(qid) end
     if ns.MapModule and ns.MapModule.QuestScrollTo then pcall(ns.MapModule.QuestScrollTo, qid) end
     return true
 end
@@ -493,17 +759,14 @@ local function MarkOnMap(it)
         if ok then return true end
     end
     local mapID = it.mapID or (current and current.ctx and current.ctx.mapID)
-    if mapID and it.x and it.y and UiMapPoint and UiMapPoint.CreateFromCoordinates
-       and C_Map and C_Map.SetUserWaypoint then
-        local ok, pt = pcall(UiMapPoint.CreateFromCoordinates, mapID, it.x / 100, it.y / 100)
-        if ok and pt then
-            pcall(C_Map.SetUserWaypoint, pt)
-            if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
-                pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
-            end
-            if C_Map.OpenWorldMap then pcall(C_Map.OpenWorldMap, mapID) end
-            return true
+    if mapID and it.x and it.y and C_Map and C_Map.SetUserWaypoint and _G.CreateVector2D then
+        local pt = { uiMapID = mapID, position = _G.CreateVector2D(it.x / 100, it.y / 100) }
+        pcall(C_Map.SetUserWaypoint, pt)
+        if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
+            pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
         end
+        if C_Map.OpenWorldMap then pcall(C_Map.OpenWorldMap, mapID) end
+        return true
     end
     if it.qid and ns.MapUI and ns.MapUI.GotoQuest then
         pcall(ns.MapUI.GotoQuest, it.qid, false)
@@ -512,10 +775,38 @@ local function MarkOnMap(it)
     return false
 end
 
+local function TalentClick(r)
+    if r.talentClick or InCombatLockdown() then return r.talentClick end
+    local click = CreateFrame("Button", nil, r, "SecureActionButtonTemplate,SecureHandlerStateTemplate")
+    click:SetPoint("TOPLEFT", r, "TOPLEFT", 0, 0)
+    click:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", -34, 0)
+    click:SetFrameLevel(r:GetFrameLevel() + 4)
+    click:SetAttribute("type", "click")
+    click:SetAttribute("clickbutton", _G.TalentMicroButton)
+    click:SetAttribute("useOnKeyDown", false)
+    click:RegisterForClicks("AnyUp", "AnyDown")
+    click:SetScript("OnEnter", function() local f = r:GetScript("OnEnter"); if f then f(r) end end)
+    click:SetScript("OnLeave", function() local f = r:GetScript("OnLeave"); if f then f(r) end end)
+    if RegisterStateDriver then
+        RegisterStateDriver(click, "combatlock", "[combat] combat; nocombat")
+        click:SetAttribute("_onstate-combatlock", [[
+            if newstate == 'combat' then
+                self:SetAttribute('type', nil)
+            else
+                self:SetAttribute('type', 'click')
+            end
+        ]])
+    end
+    click:Hide()
+    r.talentClick = click
+    return click
+end
+
 local function MakeRow(i)
     local r = subRows[i]
     if r then return r end
     r = CreateFrame("Button", nil, panel, "BackdropTemplate")
+    if not InCombatLockdown() then r:SetFrameLevel(panel:GetFrameLevel() + 2) end
     local fx = ns.hui and ns.hui.HuiCardFX and ns.hui.HuiCardFX(r, 6, 1)
     if not fx and ns.hui and ns.hui.SkinPopup and ns.hui.layer then
         ns.hui.SkinPopup(r, 8, "both", ns.hui.layer.L1)
@@ -551,10 +842,12 @@ local function MakeRow(i)
     r.xt:SetText("×")
     r.xt:SetTextColor(FAINT[1], FAINT[2], FAINT[3])
     r.btn:SetScript("OnEnter", function()
+        HoverOn()
         r.xt:SetTextColor(0.89, 0.30, 0.29)
         Tip(r.btn, L["忽略此条"], L["以后不再提醒这一条"], L["可在管理忽略里恢复"])
     end)
     r.btn:SetScript("OnLeave", function()
+        HoverOff()
         r.xt:SetTextColor(FAINT[1], FAINT[2], FAINT[3])
         HideTip()
     end)
@@ -567,6 +860,8 @@ local function MakeRow(i)
     end)
     r:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     r:SetScript("OnClick", function(_, btn)
+        if btn == "RightButton" and r.onItemRight then r.onItemRight() return end
+        if r.onItemClick then r.onItemClick(btn) return end
         if not r.jump then return end
         if ns.ZoneHint and ns.ZoneHint.IsSim and ns.ZoneHint.IsSim() then return end
         if btn == "RightButton" then
@@ -579,12 +874,14 @@ local function MakeRow(i)
         r.jump()
     end)
     r:SetScript("OnEnter", function()
+        HoverOn()
         if ns.hui and ns.hui.HuiCardState then ns.hui.HuiCardState(r, "hover") end
         r.name:SetTextColor(ACC[1], ACC[2], ACC[3])
+        if r.tipFn then r.tipFn(r) return end
         local sub = r.sub:GetText()
         if r.ikind == "turnin" then
             ItemTip(r, r.iid, r.ilabel, r.idesc or sub, L["点击在地图上定位上交 NPC"])
-        elseif r.ikind == "book" or r.ikind == "collect" or r.ikind == "rested" then
+        elseif r.ikind == "book" or r.ikind == "collect" or r.ikind == "rested" or r.ikind == "equip" or r.ikind == "mount" then
             local desc = sub
             if r.idesc and r.idesc ~= "" then
                 desc = (sub ~= "" and (sub .. " · " .. r.idesc)) or r.idesc
@@ -595,14 +892,18 @@ local function MakeRow(i)
         elseif r.ikind == "talent" then
             Tip(r, r.ilabel, r.idesc or sub, r.jumpTip or L["点击打开天赋界面"])
         else
-            SpellTip(r, r.itipid or r.iid, r.ilabel, sub)
+            SpellTip(r, r.itipid or r.iid, r.ilabel, r.subBase or sub, r.discTip)
         end
     end)
     r:SetScript("OnLeave", function()
+        HoverOff()
         if ns.hui and ns.hui.HuiCardState then ns.hui.HuiCardState(r, "norm") end
         r.name:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
         HideTip()
     end)
+    if not InCombatLockdown() then
+        TalentClick(r)
+    end
     subRows[i] = r
     return r
 end
@@ -632,9 +933,10 @@ local function ActBtn(host, key)
         end
     end)
     btn:SetScript("OnEnter", function(self)
+        HoverOn()
         if self.tipText then Tip(self, self.tipText, nil) end
     end)
-    btn:SetScript("OnLeave", function() HideTip() end)
+    btn:SetScript("OnLeave", function() HoverOff() HideTip() end)
     btn:HookScript("OnClick", function(self, mouse, down)
         if down then return end
         if mouse == "RightButton" and self.onRight then self.onRight() end
@@ -677,6 +979,105 @@ local function ActPlace(btn, target, tipText, kind, value, h, inset, onRight)
     btn:Show()
     btn.usedNow = true
     return true
+end
+
+local MT_OFF_INK = { 0.23, 0.24, 0.27, 1 }
+local function MountChipHide(r, idx)
+    if type(r.mtChips) == "table" and r.mtChips[idx] then
+        r.mtChips[idx]:Hide()
+        if r.mtChips[idx].btn then r.mtChips[idx].btn:Hide() end
+    end
+end
+
+local function MountChip(r, idx, label, ink, tipTitle, tipDesc, fn)
+    if InCombatLockdown() then return nil end
+    if not (ns.hui and ns.hui.MakeSolidChip and ns.hui.PaintSolidChip) then return nil end
+    if not r.mtChips then r.mtChips = {} end
+    local c = r.mtChips[idx]
+    if not c then
+        c = ns.hui.MakeSolidChip(r, r:GetFrameLevel() + 3, 20)
+        local b = CreateFrame("Button", nil, r)
+        b:SetFrameLevel(c:GetFrameLevel() + 1)
+        b:SetScript("OnClick", function(self)
+            ns.PlaySound(1)
+            if self.chipFn then self.chipFn() end
+        end)
+        b:SetScript("OnEnter", function(self)
+            HoverOn()
+            if self.chipTip then Tip(self, self.chipTip, self.chipTipDesc) end
+        end)
+        b:SetScript("OnLeave", function()
+            HoverOff()
+            HideTip()
+        end)
+        c.btn = b
+        b:ClearAllPoints()
+        b:SetAllPoints(c)
+        r.mtChips[idx] = c
+    end
+    ns.hui.PaintSolidChip(c, label, ink, 40, 12)
+    c:Show()
+    local b = c.btn
+    b.chipFn = fn
+    b.chipTip = tipTitle
+    b.chipTipDesc = tipDesc
+    b:Show()
+    return c
+end
+
+local function MountRowChips(r, s)
+    if not (s and s.autoKey) then
+        MountChipHide(r, 1)
+        MountChipHide(r, 2)
+        return
+    end
+    local CT = ns.ZoneHint and ns.ZoneHint.MountSwap
+    if not CT then return end
+    local auto
+    if s.autoOn then
+        auto = MountChip(r, 2, L["自动"], ns.hui.ACCENT, L["自动换装：开"], L["点击关闭；骑着马关闭会当场换回原饰品"], function()
+            CT.ToggleAuto()
+            O.Refresh()
+        end)
+    else
+        auto = MountChip(r, 2, L["自动"], MT_OFF_INK, L["自动换装：关"], L["点击恢复自动换上"], function()
+            CT.ToggleAuto()
+            O.Refresh()
+        end)
+    end
+    if auto then
+        auto:ClearAllPoints()
+        auto:SetPoint("TOPRIGHT", r, "TOPRIGHT", -32, -4)
+    end
+    if s.mountAct == "restore" then
+        local c1 = MountChip(r, 1, L["换回"], ns.hui.ACCENT, L["换回"], L["点击立即换回原饰品"], function()
+            CT.ManualRestore()
+            O.Refresh()
+        end)
+        if c1 then
+            c1:ClearAllPoints()
+            if auto then
+                c1:SetPoint("TOPRIGHT", auto, "TOPLEFT", -4, 0)
+            else
+                c1:SetPoint("TOPRIGHT", r, "TOPRIGHT", -32, -4)
+            end
+        end
+    elseif s.mountAct == "equip" then
+        local c1 = MountChip(r, 1, L["换上"], ns.hui.ACCENT, L["换上"], L["点击立即换上「棍子上的胡萝卜」"], function()
+            CT.ManualEquip()
+            O.Refresh()
+        end)
+        if c1 then
+            c1:ClearAllPoints()
+            if auto then
+                c1:SetPoint("TOPRIGHT", auto, "TOPLEFT", -4, 0)
+            else
+                c1:SetPoint("TOPRIGHT", r, "TOPRIGHT", -32, -4)
+            end
+        end
+    else
+        MountChipHide(r, 1)
+    end
 end
 
 FoodMenuClose = function()
@@ -828,6 +1229,7 @@ function O.FoodMenu()
 end
 
 local function Layout(res)
+    if InCombat() then return end
     local list = (res and res.items) or {}
     local n = #list
     local ci, hi, ri = 0, 0, 0
@@ -870,7 +1272,8 @@ local function Layout(res)
                 if c > shown then h = h + 18 end
             else
                 local cardH = CARD_H
-                if list[i] and list[i].btn then cardH = CARD_H + 26 end
+                if list[i] and list[i].statuscard then cardH = StatusCardH()
+                elseif list[i] and list[i].btn then cardH = CARD_H + 26 end
                 h = h + cardH + GAP
             end
         end
@@ -894,7 +1297,7 @@ local function Layout(res)
             h:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PAD, y)
             h:SetHeight(HEAD_H)
             h.label:SetText(it.title or "")
-            h.cnt:SetText(string.format(L["%d 个"], #subs))
+            h.cnt:SetText(it.cntText or string.format(L["%d 个"], #subs))
             h:Show()
             y = y - (HEAD_H + 2)
             local shown = #subs > cap and cap or #subs
@@ -902,8 +1305,8 @@ local function Layout(res)
                 local s = subs[k]
                 ri = ri + 1
                 local r = MakeRow(ri)
-                if s.disc then
-                    r.icon:SetTexture(s.disc)
+                if s.discTex then
+                    r.icon:SetTexture(s.discTex)
                     r.icon:SetTexCoord(0, 1, 0, 1)
                     local dc = s.discCol
                     if dc then
@@ -935,7 +1338,16 @@ local function Layout(res)
                 r.sub:SetPoint("TOPLEFT", r, "TOPLEFT", textLeft, -26)
                 r.sub:SetWidth(textW)
                 r.name:SetText(s.name or "")
-                r.sub:SetText(s.sub or SubText(s))
+                local subBase = s.sub or SubText(s)
+                if s.disc then
+                    r.sub:SetText(subBase .. " · " .. s.disc)
+                    local wide = (r.sub:GetStringWidth() or 0) > (textW + 2)
+                    r.sub:SetText(wide and (subBase .. "\n" .. s.disc) or (subBase .. " · " .. s.disc))
+                else
+                    r.sub:SetText(subBase)
+                end
+                r.subBase = subBase
+                r.discTip = s.discTip
                 local subH = r.sub:GetStringHeight() or 16
                 local rowHi = rowH
                 if 26 + subH + 4 > rowHi then rowHi = 26 + subH + 4 end
@@ -961,7 +1373,7 @@ local function Layout(res)
                 r.btn:ClearAllPoints()
                 r.btn:SetPoint("RIGHT", r, "RIGHT", -6, 0)
                 r.btn:SetFrameLevel(r:GetFrameLevel() + 6)
-                r.btn:Show()
+                if s.hideX then r.btn:Hide() else r.btn:Show() end
                 do
                     local DG = ns.DungeonDG or (ns.ProfHost and ns.ProfHost.DG)
                     if s.badge and DG and DG.MakeBadge and DG.BadgeTint then
@@ -1006,6 +1418,7 @@ local function Layout(res)
                 else
                     if r.actChip then r.actChip:Hide() end
                 end
+                MountRowChips(r, s)
                 r.ikey = s.ikey
                 r.ikind = s.ikind or it.kind
                 r.iid = s.base or s.id
@@ -1015,6 +1428,14 @@ local function Layout(res)
                 r.idesc = s.desc
                 r.ilabel = s.name
                 r.jumpTip = s.jumpTip
+                if not r.talentClick then TalentClick(r) end
+                if r.talentClick then
+                    local yes = (r.ikind == "talent") and _G.TalentMicroButton ~= nil
+                    if not InCombatLockdown() then
+                        r.talentClick:SetShown(yes)
+                        r.talentClick:EnableMouse(yes)
+                    end
+                end
                 if s.jump then
                     r.jump = s.jump
                 elseif s.areaID or s.qid or (s.mapID and s.x and s.y) then
@@ -1022,6 +1443,9 @@ local function Layout(res)
                 else
                     r.jump = nil
                 end
+                r.onItemClick = s.onItemClick
+                r.onItemRight = s.onItemRight
+                r.tipFn = s.tipFn
                 r:ClearAllPoints()
                 r:SetPoint("TOPLEFT", panel, "TOPLEFT", PAD, y)
                 r:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PAD, y)
@@ -1041,6 +1465,12 @@ local function Layout(res)
         else
             ci = ci + 1
             local card = MakeCard(ci)
+            card.__dfStatusShown = nil
+            if card.edit and not (it and it.statuscard) then card.edit:Hide() end
+            if card.status and not (it and it.statuscard) then card.status:Hide() end
+            if card.guide and not (it and it.statuscard) then card.guide:Hide() end
+            if card.title and not (it and it.statuscard) then card.title:SetWidth(PANEL_W - PAD * 2 - 60) end
+            if card.text and not (it and it.statuscard) then card.text:Show() end
             card.title:SetText(it.title or "")
             card.text:SetText(it.text or "")
             local textH = 14
@@ -1076,12 +1506,46 @@ local function Layout(res)
                 card.name:Hide()
             end
             if card.chip and ns.hui and ns.hui.PaintSolidChip then
-                local chip = tostring(it.n or 0)
+                local chip = it.chipText or tostring(it.n or 0)
                 if it.noChip then chip = "" end
                 ns.hui.PaintSolidChip(card.chip, chip, ns.hui.ACCENT, 32)
             end
             local ch = CARD_H
-            if it.btn then
+            if it.bagcleanup then
+                card.act:Hide()
+                card.act2:Hide()
+                card.act3:Hide()
+                card.stat:Hide()
+                card.onAct = nil
+                card.onAct2 = nil
+                card.onAct3 = nil
+                card.hint = nil
+                card.hint2 = nil
+                card.hint3 = nil
+                local vis = {}
+                if it.btn3 and it.btn3 ~= "" then vis[#vis + 1] = { b = card.act3, label = it.btn3, w = 78, on = it.onClick3, hint = it.hint3 } end
+                if it.btn2 and it.btn2 ~= "" then vis[#vis + 1] = { b = card.act2, label = it.btn2, w = 52, on = it.onClick2, hint = it.hint2 } end
+                if it.btn and it.btn ~= "" then vis[#vis + 1] = { b = card.act, label = it.btn, w = 98, on = it.onClick, hint = it.hint } end
+                local anchorBt
+                for vi = #vis, 1, -1 do
+                    local v = vis[vi]
+                    v.b:SetText(v.label)
+                    v.b:SetWidth(v.w)
+                    v.b:SetHeight(22)
+                    v.b:ClearAllPoints()
+                    if anchorBt then
+                        v.b:SetPoint("RIGHT", anchorBt, "LEFT", -6, 0)
+                    else
+                        v.b:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -8, 8)
+                    end
+                    v.b:Show()
+                    anchorBt = v.b
+                end
+                if it.btn and it.btn ~= "" then card.onAct = it.onClick; card.hint = it.hint end
+                if it.btn2 and it.btn2 ~= "" then card.onAct2 = it.onClick2; card.hint2 = it.hint2 end
+                if it.btn3 and it.btn3 ~= "" then card.onAct3 = it.onClick3; card.hint3 = it.hint3 end
+                ch = 27 + textH + 6 + 22 + 8
+            elseif it.btn then
                 ch = 27 + textH + 6 + 22 + 8
                 local has2 = it.btn2 and it.btn2 ~= ""
                 local has3 = it.btn3 and it.btn3 ~= ""
@@ -1155,6 +1619,9 @@ local function Layout(res)
                 card.act3:Hide()
                 card.stat:Hide()
             end
+            if it.statuscard then
+                ch = PaintStatusCard(card, it)
+            end
             local cardAct = it.onCard or it.useMacro or it.useItem
             card:SetScript("OnMouseUp", nil)
             if cardAct then
@@ -1219,7 +1686,7 @@ end
 
 local function Open(keep)
     if not panel or panel:IsShown() then return end
-    if InCombatLockdown and InCombatLockdown() then return end
+    if InCombat() then return end
     if opts then opts:Hide() end
     do
         local MWm = ns.MapWindowModule
@@ -1227,7 +1694,9 @@ local function Open(keep)
     end
     Layout(current)
     panel:SetAlpha(0)
+    if panel.hoverCatch then panel.hoverCatch:EnableMouse(true) end
     local function apply(e)
+        if InCombat() then return end
         panel:ClearAllPoints()
         panel:SetPoint("LEFT", orb, "RIGHT", 8 - SLIDE * (1 - e), 0)
         panel:SetAlpha(e)
@@ -1262,10 +1731,46 @@ local function Toggle()
     end
 end
 
+local pendShow = {}
+
+local function WantShow(f, want)
+    if not f then return end
+    if want then
+        if f:IsShown() then
+            pendShow[f] = nil
+            return
+        end
+        if InCombat() then
+            pendShow[f] = true
+            return
+        end
+        pendShow[f] = nil
+        f:Show()
+        return
+    end
+    pendShow[f] = nil
+    if f:IsShown() then f:Hide() end
+end
+
 local function Pulse()
+    if InCombat() then return end
     if not badge or not badge:IsShown() then return end
     pulseT = 0
     if pulseFrame then pulseFrame:Show() end
+end
+
+local function RowPresent(ikind)
+    local res = current
+    if type(res) ~= "table" or type(res.items) ~= "table" then return false end
+    for i = 1, #res.items do
+        local it = res.items[i]
+        if it.kind == "buff" and type(it.list) == "table" then
+            for k = 1, #it.list do
+                if it.list[k].ikind == ikind then return true end
+            end
+        end
+    end
+    return false
 end
 
 function O.Update(res)
@@ -1283,16 +1788,82 @@ function O.Update(res)
             end
         end
     end
+    do
+        local BCM = ns.BagCleanup
+        if res and type(res.items) == "table" then
+            for i = #res.items, 1, -1 do
+                local it = res.items[i]
+                if it and it.kind == "bagcleanup" then table.remove(res.items, i) end
+            end
+            local cards = (BCM and BCM.Card) and BCM.Card() or nil
+            if cards and ns.BagCleanup and ns.BagCleanup.DB and ns.BagCleanup.DB().hideEmpty == true then local b = cards[1]; if b and b.bagcleanup and not b.icon then cards = nil end end
+            if cards then
+                for i = #cards, 1, -1 do table.insert(res.items, 1, cards[i]) end
+                res.__bagActive = true
+            else
+                res.__bagActive = false
+            end
+        end
+    end
+    do
+        if res and type(res.items) == "table" then
+            local _sc = ns.ZoneHint and ns.ZoneHint.CFG and ns.ZoneHint.CFG() or {}
+            local _show = (_sc.statusCard ~= false)
+            res.__statusActive = _show
+            O.rareList = {}
+            if _show then
+                local _cid = O.CurDungeonId()
+                if _cid and (_sc.rareTarget ~= false) then O.rareList = O.RareNamesFor(_cid) else O.rareList = {} end
+                local db = ns.DB and ns.DB()
+                if db then
+                    db.ui = db.ui or {}
+                    db.ui.statusCard = db.ui.statusCard or {}
+                    local sc = db.ui.statusCard
+                    if #O.rareList > 0 then
+                        local cur = sc.targetName or ""
+                        local idx
+                        for i = 1, #O.rareList do
+                            if O.rareList[i] == cur then idx = i break end
+                        end
+                        if cur == "" then
+                            sc.targetName = O.rareList[1]
+                            sc.rareIdx = 1
+                        elseif idx then
+                            sc.rareIdx = idx
+                        end
+                    else
+                        sc.rareIdx = 0
+                    end
+                end
+            else
+                local db = ns.DB and ns.DB()
+                if db and db.ui and db.ui.statusCard then db.ui.statusCard.rareIdx = 0 end
+            end
+            for i = #res.items, 1, -1 do
+                local it = res.items[i]
+                if it and it.kind == "statuscard" then table.remove(res.items, i) end
+            end
+            if _show then
+                table.insert(res.items, 1, {
+                    kind = "statuscard",
+                    statuscard = true,
+                    title = L["状态卡"],
+                    icon = "Interface\\Icons\\INV_Misc_QuestionMark",
+                    noChip = true,
+                })
+            end
+        end
+    end
     current = res
+    if O.SyncPing then O.SyncPing() end
     if not badge then return end
     local onc = Cfg()
     local n = (res and res.total) or 0
     local settingsOpen = opts and opts.IsShown and opts:IsShown() or false
     local wantOrb = onc.on ~= false
     if orb then
-        local ghost = wantOrb and (onc.onlyTodo and not settingsOpen) and n == 0
-        if wantOrb and not orb:IsShown() then orb:Show() end
-        if not wantOrb and orb:IsShown() then orb:Hide() end
+        local ghost = wantOrb and (onc.onlyTodo and not settingsOpen) and n == 0 and not (res and res.__bagActive)
+        WantShow(orb, wantOrb)
         if ghost then
             if orb:IsMouseOver() or (panel and panel:IsShown()) then
                 if orb:GetAlpha() ~= 1 then orb:SetAlpha(1) end
@@ -1308,11 +1879,11 @@ function O.Update(res)
     PaintRing(n)
     if n > 0 then
         if badgeText then badgeText:SetText(n > 9 and "9+" or tostring(n)) end
-        badge:Show()
+        WantShow(badge, true)
         if lastN ~= n then Pulse() end
         lastN = n
     else
-        badge:Hide()
+        WantShow(badge, false)
         lastN = 0
     end
     local sawFood, sawRested = false, false
@@ -1326,10 +1897,10 @@ function O.Update(res)
     end
     if onc.on ~= false then
         if sawFood and not lastFood and onc.voice == true and onc.foodVoice ~= false then
-            O.SayVoice(FOOD_CUE)
+            O.SayVoice(FOOD_CUE, nil, function() return RowPresent("food") end)
         end
         if sawRested and not lastRested and onc.voice == true and onc.restedVoice ~= false then
-            O.SayVoice(RESTED_CUE)
+            O.SayVoice(RESTED_CUE, nil, function() return RowPresent("rested") end)
         end
     end
     lastFood, lastRested = sawFood, sawRested
@@ -1353,7 +1924,13 @@ end
 
 function O.Hide()
     Close()
-    if orb then orb:Hide() end
+    if orb then
+        if type(InCombatLockdown) == "function" and InCombatLockdown() then
+            orb.hidePending = true
+        else
+            orb:Hide()
+        end
+    end
 end
 
 local function InitVoiceBtn()
@@ -1392,7 +1969,7 @@ function O.Init()
         return
     end
 
-    orb = CreateFrame("Button", "DFZoneOrb", UIParent)
+    orb = CreateFrame("Button", "DFZoneOrb", UIParent, "SecureActionButtonTemplate")
     orb:SetSize(ORB_SIZE, ORB_SIZE)
     orb:SetFrameStrata("MEDIUM")
     orb:SetFrameLevel(300)
@@ -1450,6 +2027,12 @@ function O.Init()
             tweener:Hide()
             return
         end
+        if O.InCombat() then
+            job = nil
+            tweener:Hide()
+            Close()
+            return
+        end
         job.t = job.t + dt
         local k = job.t / job.dur
         if k > 1 then k = 1 end
@@ -1469,11 +2052,36 @@ function O.Init()
     panel:SetFrameStrata("MEDIUM")
     panel:SetFrameLevel(400)
     panel:SetClampedToScreen(true)
-    panel:EnableMouse(true)
+    panel:EnableMouse(false)
+    panel.escProxy = CreateFrame("Frame", "DFZoneOrbEscProxy", UIParent)
+    panel.escProxy:Hide()
+    panel.escProxy:SetScript("OnHide", function()
+        if panel and panel:IsShown() then Close() end
+    end)
+    panel:HookScript("OnShow", function()
+        if panel.escProxy and not panel.escProxy:IsShown() then panel.escProxy:Show() end
+    end)
+    panel:HookScript("OnHide", function()
+        if panel.escProxy and panel.escProxy:IsShown() then panel.escProxy:Hide() end
+        if opts and opts:IsShown() then opts:Hide() end
+    end)
     panel:Hide()
     if ns.hui and ns.hui.SkinPopup and ns.hui.layer then
         ns.hui.SkinPopup(panel, 10, "both", ns.hui.layer.L0)
     end
+
+    panel.hoverCatch = CreateFrame("Frame", nil, panel)
+    panel.hoverCatch:SetAllPoints(panel)
+    panel.hoverCatch:SetFrameLevel(panel:GetFrameLevel() + 1)
+    panel.hoverCatch:EnableMouse(true)
+    panel.hoverCatch:SetScript("OnEnter", function()
+        hovered = true
+        hideToken = hideToken + 1
+    end)
+    panel.hoverCatch:SetScript("OnLeave", function()
+        hovered = false
+        StartHideTimer()
+    end)
 
     panel.title = panel:CreateFontString(nil, "OVERLAY")
     panel.title:SetFont(ns.FONT, 16, "")
@@ -1594,9 +2202,10 @@ function O.Init()
     gt:SetVertexColor(GLYPH, GLYPH, GLYPH, 1)
 
     InitVoiceBtn()
-    opts = CreateFrame("Frame", nil, panel, "BackdropTemplate")
-    opts:SetSize(184, 444)
+    opts = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    opts:SetSize(750, 330)
     opts:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -40)
+    opts:SetFrameStrata("DIALOG")
     opts:SetFrameLevel(panel:GetFrameLevel() + 8)
     if ns.hui and ns.hui.SkinPopup and ns.hui.layer then
         ns.hui.SkinPopup(opts, 8, "both", ns.hui.layer.L2)
@@ -1613,6 +2222,29 @@ function O.Init()
     end)
     opts:Hide()
 
+    local OPTS_MARGIN = 8
+    local function PlaceOpts()
+        local sw = (UIParent.GetWidth and UIParent:GetWidth()) or 1920
+        local sh = (UIParent.GetHeight and UIParent:GetHeight()) or 1080
+        local pr = (panel.GetRight and panel:GetRight()) or sw
+        local pl = (panel.GetLeft and panel:GetLeft()) or 0
+        local pt = (panel.GetTop and panel:GetTop()) or sh
+        local w = opts:GetWidth() or 620
+        local h = opts:GetHeight() or 330
+        local ty = pt - 46
+        if ty < h + OPTS_MARGIN then ty = h + OPTS_MARGIN end
+        if ty > sh - OPTS_MARGIN then ty = sh - OPTS_MARGIN end
+        opts:ClearAllPoints()
+        local right = pr - 8
+        if right - w >= OPTS_MARGIN then
+            opts:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", right, ty)
+        else
+            local left = pl + 8
+            if left + w > sw - OPTS_MARGIN then left = math.max(OPTS_MARGIN, sw - OPTS_MARGIN - w) end
+            opts:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, ty)
+        end
+    end
+
     local oph = opts:CreateFontString(nil, "OVERLAY")
     oph:SetFont(ns.FONT, 14, "")
     oph:SetPoint("TOPLEFT", opts, "TOPLEFT", 10, -8)
@@ -1621,16 +2253,45 @@ function O.Init()
 
     optCbs = {}
 
-    local function OptRow(y, label, key, tip, vkey)
+    local COL_STEP = 152
+    local colRow = { 0, 0, 0, 0 }
+    local function ColX(col)
+        local x = 10
+        for c = 1, col - 1 do
+            x = x + COL_STEP + ((c == 2 or c == 3) and 33 or 0)
+        end
+        return x
+    end
+    local function CtrlOff(col)
+        if col == 2 or col == 3 then return 168 end
+        return 132
+    end
+    local function ColNext(col)
+        local y = -34 - colRow[col] * 22
+        colRow[col] = colRow[col] + 1
+        return y
+    end
+    local function ColHead(col, text)
+        local y = ColNext(col)
+        local h = opts:CreateFontString(nil, "OVERLAY")
+        h:SetFont(ns.FONT, 14, "")
+        h:SetPoint("TOPLEFT", opts, "TOPLEFT", ColX(col), y - 4)
+        h:SetText(text)
+        h:SetTextColor(FAINT[1], FAINT[2], FAINT[3])
+    end
+
+    local function OptRow(col, label, key, tip, vkey, rightAlign)
+        local y = ColNext(col)
+        local bx = ColX(col)
         local t = opts:CreateFontString(nil, "OVERLAY")
         t:SetFont(ns.FONT, 14, "")
-        t:SetPoint("TOPLEFT", opts, "TOPLEFT", 10, y - 4)
+        t:SetPoint("TOPLEFT", opts, "TOPLEFT", bx, y - 4)
         t:SetText(label)
         t:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
         if vkey then
             local vb = CreateFrame("Button", nil, opts)
             vb:SetSize(28, 22)
-            vb:SetPoint("TOPRIGHT", opts, "TOPRIGHT", -56, y + 1)
+            vb:SetPoint("TOPRIGHT", opts, "TOPLEFT", bx + 81, y + 1)
             vb.tex = vb:CreateTexture(nil, "ARTWORK")
             vb.tex:SetSize(21, 21)
             vb.tex:SetPoint("CENTER", vb, "CENTER", 0, 0)
@@ -1669,7 +2330,11 @@ function O.Init()
         end
         local cb = CreateFrame("CheckButton", nil, opts)
         cb:SetSize(36, 20)
-        cb:SetPoint("TOPRIGHT", opts, "TOPRIGHT", -8, y + 1)
+        if rightAlign then
+            cb:SetPoint("TOPRIGHT", opts, "TOPRIGHT", -12, y + 1)
+        else
+            cb:SetPoint("TOPRIGHT", opts, "TOPLEFT", bx + CtrlOff(col), y + 1)
+        end
         if ns.hui and ns.hui.ReskinToggle then ns.hui.ReskinToggle(cb) end
         cb:SetScript("OnClick", function(self)
             ns.PlaySound(1)
@@ -1695,30 +2360,93 @@ function O.Init()
         return cb
     end
 
-    OptRow(-32, L["探索-书籍提醒"], "book", L["本图还有未收集的书时提示"])
-    OptRow(-54, L["探索-书籍上交提醒"], "turnin", L["在幽暗城且背包有可上交的书时提示"])
-    OptRow(-76, L["探索-睡袋提醒"], "bag", L["本图有睡袋任务链的一步时提示"])
-    OptRow(-98, L["探索-火炬提醒"], "torch", L["本图有守夜人火炬可拾取时提示"])
-    OptRow(-120, L["探索-旗帜提醒"], "banner", L["进入血色修道院副本后，有未拾取的血色旗帜时提示"])
-    OptRow(-142, L["副本-任务提醒"], "quest", L["本图有可接的副本任务时提示"])
-    OptRow(-164, L["职业-技能提醒"], "spell", L["主城有训练师且技能可学时提示"])
-    OptRow(-186, L["职业-天赋提醒"], "talent", L["有未分配的天赋点时提示，点击可直接打开天赋界面"])
-    OptRow(-208, L["增益-食物提醒"], "food", L["没吃食物、缺少经验加成时提示"], "foodVoice")
-    OptRow(-230, L["增益-睡袋提醒"], "rested", L["背包有睡袋且未休息或 buff 快到期时提示"], "restedVoice")
-    OptRow(-252, L["增益-露营提醒"], "camp", L["在营火旁且没有强化休息时提示"])
-    OptRow(-274, L["增益-到期提醒"], "renew", L["强化休息快到期时提示回营地续一次"])
-    OptRow(-296, L["增益-蹭帐篷卡片"], "tent", L["找到营地玩家且自己还没有强化休息时，在待办里弹出卡片"])
-    OptRow(-318, L["有帐篷时不提示"], "tentOwn", L["自己已有帐篷时，不再在待办里弹出蹭帐篷卡片"])
+    ColHead(1, L["探索"])
+    OptRow(1, L["书籍提醒"], "book", L["本图还有未收集的书时提示"])
+    OptRow(1, L["书籍上交提醒"], "turnin", L["在幽暗城且背包有可上交的书时提示"])
+    OptRow(1, L["睡袋提醒"], "bag", L["本图有睡袋任务链的一步时提示"])
+    OptRow(1, L["火炬提醒"], "torch", L["本图有守夜人火炬可拾取时提示"])
+    OptRow(1, L["旗帜提醒"], "banner", L["进入血色修道院副本后，有未拾取的血色旗帜时提示"])
+    ColHead(1, L["职业"])
+    OptRow(1, L["技能提醒"], "spell", L["主城有训练师且技能可学时提示"])
+    OptRow(1, L["天赋提醒"], "talent", L["有未分配的天赋点时提示，点击可直接打开天赋界面"])
+    ColHead(1, L["专业"])
+    OptRow(1, L["冷却可做提醒"], "profcd", L["本账号任意角色的冷却配方可再做时，在待办里提示"])
 
+    ColHead(2, L["副本"])
+    OptRow(2, L["必备物品提醒"], "keyitem", L["在副本里且背包没有该副本要用的物品时提示"])
+    ColHead(2, L["副本任务"])
+    OptRow(2, L["未接任务提醒"], "quest", L["本图有可接的副本任务时提示"])
+    OptRow(2, L["已接任务提醒"], "questTaken", L["在副本里列出已接任务，并显示每条任务的完成进度"])
+    OptRow(2, L["任务难度灰色不显示"], "questGrey", L["任务难度对当前等级呈灰色时，不列入地图待办"])
+
+    ColHead(2, L["状态卡"])
+    local scy = ColNext(2)
+    local scLabel = opts:CreateFontString(nil, "OVERLAY")
+    scLabel:SetFont(ns.FONT, 14, "")
+    scLabel:SetPoint("TOPLEFT", opts, "TOPLEFT", ColX(2), scy - 4)
+    scLabel:SetText(L["显示标记目标卡"])
+    scLabel:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
+    local scCb = CreateFrame("CheckButton", nil, opts)
+    scCb:SetSize(36, 20)
+    scCb:SetPoint("TOPRIGHT", opts, "TOPLEFT", ColX(2) + 168, scy + 1)
+    if ns.hui and ns.hui.ReskinToggle then ns.hui.ReskinToggle(scCb) end
+    scCb:SetScript("OnClick", function(self)
+        ns.PlaySound(1)
+        local c = ns.ZoneHint and ns.ZoneHint.CFG and ns.ZoneHint.CFG()
+        if c then
+            c.statusCard = not (c.statusCard ~= false)
+            if self.SetChecked then self:SetChecked(c.statusCard ~= false) end
+        end
+        O.Refresh()
+    end)
+    scCb:SetScript("OnEnter", function()
+        Tip(scCb, L["显示标记目标卡"], L["在地图待办里显示标记目标卡片，填目标名后右键待办圆球即可选中并 ping"])
+    end)
+    scCb:SetScript("OnLeave", HideTip)
+
+    local rty = ColNext(2)
+    local rtLabel = opts:CreateFontString(nil, "OVERLAY")
+    rtLabel:SetFont(ns.FONT, 14, "")
+    rtLabel:SetPoint("TOPLEFT", opts, "TOPLEFT", ColX(2), rty - 4)
+    rtLabel:SetText(L["副本稀有目标"])
+    rtLabel:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
+    local rareCb = CreateFrame("CheckButton", nil, opts)
+    rareCb:SetSize(36, 20)
+    rareCb:SetPoint("TOPRIGHT", opts, "TOPLEFT", ColX(2) + 168, rty + 1)
+    if ns.hui and ns.hui.ReskinToggle then ns.hui.ReskinToggle(rareCb) end
+    rareCb:SetScript("OnClick", function(self)
+        ns.PlaySound(1)
+        local c = ns.ZoneHint and ns.ZoneHint.CFG and ns.ZoneHint.CFG()
+        if c then
+            c.rareTarget = not (c.rareTarget ~= false)
+            if self.SetChecked then self:SetChecked(c.rareTarget ~= false) end
+        end
+        O.Refresh()
+    end)
+    rareCb:SetScript("OnEnter", function()
+        Tip(rareCb, L["副本稀有目标"], L["开启后进入副本时自动把目标填成本副本稀有怪名字，右键待办圆球可切换下一个稀有"])
+    end)
+    rareCb:SetScript("OnLeave", HideTip)
+
+    ColHead(3, L["增益"])
+    OptRow(3, L["食物提醒"], "food", L["没吃食物、缺少经验加成时提示"], "foodVoice")
+    OptRow(3, L["睡袋提醒"], "rested", L["背包有睡袋且未休息或 buff 快到期时提示"], "restedVoice")
+    OptRow(3, L["露营提醒"], "camp", L["在营火旁且没有强化休息时提示"])
+    OptRow(3, L["到期提醒"], "renew", L["强化休息快到期时提示回营地续一次"])
+    OptRow(3, L["蹭帐篷卡片"], "tent", L["找到营地玩家且自己还没有强化休息时，在待办里弹出卡片"])
+    OptRow(3, L["有帐篷时不提示"], "tentOwn", L["自己已有帐篷时，不再在待办里弹出蹭帐篷卡片"])
+
+    local ttY = ColNext(3)
+    local ttBX = ColX(3)
     local ttLabel = opts:CreateFontString(nil, "OVERLAY")
     ttLabel:SetFont(ns.FONT, 14, "")
-    ttLabel:SetPoint("TOPLEFT", opts, "TOPLEFT", 10, -344)
+    ttLabel:SetPoint("TOPLEFT", opts, "TOPLEFT", ttBX, ttY - 4)
     ttLabel:SetText(L["蹭帐篷密语"])
     ttLabel:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
 
     local ttBtn = CreateFrame("Button", nil, opts, "BackdropTemplate")
     ttBtn:SetSize(56, 20)
-    ttBtn:SetPoint("TOPRIGHT", opts, "TOPRIGHT", -8, -341)
+    ttBtn:SetPoint("TOPRIGHT", opts, "TOPLEFT", ttBX + 168, ttY + 1)
     if ns.hui and ns.hui.BuildRoundedBG and ns.hui.layer then
         ns.hui.BuildRoundedBG(ttBtn, 6, ns.hui.layer.L2, "both", true, 1)
     end
@@ -1773,25 +2501,71 @@ function O.Init()
     ttBtn:SetScript("OnLeave", HideTip)
     SyncTentText()
 
-    local oph2 = opts:CreateFontString(nil, "OVERLAY")
-    oph2:SetFont(ns.FONT, 14, "")
-    oph2:SetPoint("TOPLEFT", opts, "TOPLEFT", 10, -368)
-    oph2:SetText(L["窗口设置"])
-    oph2:SetTextColor(FAINT[1], FAINT[2], FAINT[3])
+    local mtHeadY = ColNext(3)
+    local mtHeadX = ColX(3)
+    local mtHead = opts:CreateFontString(nil, "OVERLAY")
+    mtHead:SetFont(ns.FONT, 14, "")
+    mtHead:SetPoint("TOPLEFT", opts, "TOPLEFT", mtHeadX, mtHeadY - 4)
+    mtHead:SetText(L["坐骑"])
+    mtHead:SetTextColor(FAINT[1], FAINT[2], FAINT[3])
+    mtHead:Hide()
+    local mtRowY = ColNext(3)
+    local mtLbl = opts:CreateFontString(nil, "OVERLAY")
+    mtLbl:SetFont(ns.FONT, 14, "")
+    mtLbl:SetPoint("TOPLEFT", opts, "TOPLEFT", mtHeadX, mtRowY - 4)
+    mtLbl:SetText(L["胡萝卜提醒"])
+    mtLbl:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
+    mtLbl:Hide()
+    local mtCb = CreateFrame("CheckButton", nil, opts)
+    mtCb:SetSize(36, 20)
+    mtCb:SetPoint("TOPRIGHT", opts, "TOPLEFT", mtHeadX + 168, mtRowY + 1)
+    if ns.hui and ns.hui.ReskinToggle then ns.hui.ReskinToggle(mtCb) end
+    mtCb:SetScript("OnClick", function(self)
+        ns.PlaySound(1)
+        local CT = ns.ZoneHint and ns.ZoneHint.MountSwap
+        if CT and CT.ToggleMaster then CT.ToggleMaster() end
+        local c = ns.ZoneHint and ns.ZoneHint.CFG and ns.ZoneHint.CFG() or {}
+        if self.SetChecked then self:SetChecked(c.carrot ~= false) end
+        O.Refresh()
+    end)
+    mtCb:SetScript("OnEnter", function()
+        Tip(mtCb, L["胡萝卜提醒"], L["关闭后不显示胡萝卜状态卡，上马也不再自动换装；我们换上的会在下马时换回"])
+    end)
+    mtCb:SetScript("OnLeave", HideTip)
+    mtCb:Hide()
+    optCbs.carrot = mtCb
+    local function SyncMountOpts()
+        local CT = ns.ZoneHint and ns.ZoneHint.MountSwap
+        local owned = (CT and CT.Owned and CT.Owned()) and true or false
+        if owned then
+            mtHead:Show()
+            mtLbl:Show()
+            mtCb:Show()
+            if mtCb.SetChecked then mtCb:SetChecked(ns.ZoneHint.CFG().carrot ~= false) end
+        else
+            mtHead:Hide()
+            mtLbl:Hide()
+            mtCb:Hide()
+        end
+    end
 
-    OptRow(-388, L["仅有待办时显示"], "onlyTodo", L["没有待办时隐藏圆形按钮"])
+    ColHead(4, L["窗口"])
+    OptRow(4, L["仅有待办时显示"], "onlyTodo", L["没有待办时隐藏圆形按钮"], nil, true)
+    OptRow(4, L["进新场景不弹窗"], "noZonePopup", L["进入新的场景时不再自动弹出待办窗口，可点击圆球查看"], nil, true)
 
     local SIZES = { 24, 28, 32, 36, 40 }
 
+    local szY = ColNext(4)
+    local szBX = ColX(4)
     local szLabel = opts:CreateFontString(nil, "OVERLAY")
     szLabel:SetFont(ns.FONT, 14, "")
-    szLabel:SetPoint("TOPLEFT", opts, "TOPLEFT", 10, -416)
+    szLabel:SetPoint("TOPLEFT", opts, "TOPLEFT", szBX, szY - 4)
     szLabel:SetText(L["待办图标大小"])
     szLabel:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
 
     local szBtn = CreateFrame("Button", nil, opts, "BackdropTemplate")
     szBtn:SetSize(36, 20)
-    szBtn:SetPoint("TOPRIGHT", opts, "TOPRIGHT", -8, -411)
+    szBtn:SetPoint("TOPRIGHT", opts, "TOPRIGHT", -12, szY + 1)
     if ns.hui and ns.hui.BuildRoundedBG and ns.hui.layer then
         ns.hui.BuildRoundedBG(szBtn, 6, ns.hui.layer.L2, "both", true, 1)
     end
@@ -1827,6 +2601,118 @@ function O.Init()
     end)
     szBtn:SetScript("OnLeave", HideTip)
 
+    ColHead(4, L["背包清理"])
+    local bcy = ColNext(4)
+    local bcLabel = opts:CreateFontString(nil, "OVERLAY")
+    bcLabel:SetFont(ns.FONT, 14, "")
+    bcLabel:SetPoint("TOPLEFT", opts, "TOPLEFT", ColX(4), bcy - 4)
+    bcLabel:SetText(L["背包清理卡"])
+    bcLabel:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
+    local bcCb = CreateFrame("CheckButton", nil, opts)
+    bcCb:SetSize(36, 20)
+    bcCb:SetPoint("TOPRIGHT", opts, "TOPRIGHT", -12, bcy + 1)
+    if ns.hui and ns.hui.ReskinToggle then ns.hui.ReskinToggle(bcCb) end
+    bcCb:SetScript("OnClick", function(self)
+        ns.PlaySound(1)
+        local on = ns.BagCleanup and ns.BagCleanup.ToggleOn and ns.BagCleanup.ToggleOn()
+        if self.SetChecked then self:SetChecked(on and true or false) end
+        O.Refresh()
+    end)
+    bcCb:SetScript("OnEnter", function()
+        Tip(bcCb, L["背包清理卡"], L["背包快满时在地图待办里显示可摧毁的灰色物品与卖店价值"])
+    end)
+    bcCb:SetScript("OnLeave", HideTip)
+    optCbs.bagCleanup = bcCb
+
+    local hey = ColNext(4)
+    local heLabel = opts:CreateFontString(nil, "OVERLAY")
+    heLabel:SetFont(ns.FONT, 14, "")
+    heLabel:SetPoint("TOPLEFT", opts, "TOPLEFT", ColX(4), hey - 4)
+    heLabel:SetText(L["没有可摧毁的物品时隐藏"])
+    heLabel:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
+    local heCb = CreateFrame("CheckButton", nil, opts)
+    heCb:SetSize(36, 20)
+    heCb:SetPoint("TOPRIGHT", opts, "TOPRIGHT", -12, hey + 1)
+    if ns.hui and ns.hui.ReskinToggle then ns.hui.ReskinToggle(heCb) end
+    heCb:SetScript("OnClick", function(self)
+        ns.PlaySound(1)
+        local b = ns.BagCleanup and ns.BagCleanup.DB and ns.BagCleanup.DB()
+        if b then
+            b.hideEmpty = not b.hideEmpty
+            if heCb.SetChecked then heCb:SetChecked(b.hideEmpty == true) end
+        end
+        O.Refresh()
+    end)
+    heCb:SetScript("OnEnter", function()
+        Tip(heCb, L["没有可摧毁的物品时隐藏"], L["没有可摧毁的灰色物品时，不显示背包清理卡"])
+    end)
+    heCb:SetScript("OnLeave", HideTip)
+
+    local thy = ColNext(4)
+    local thLabel = opts:CreateFontString(nil, "OVERLAY")
+    thLabel:SetFont(ns.FONT, 14, "")
+    thLabel:SetPoint("TOPLEFT", opts, "TOPLEFT", ColX(4), thy - 4)
+    thLabel:SetText(L["剩余格提醒"])
+    thLabel:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
+    local thBtn = CreateFrame("Button", nil, opts, "BackdropTemplate")
+    thBtn:SetSize(36, 20)
+    thBtn:SetPoint("TOPRIGHT", opts, "TOPRIGHT", -12, thy + 1)
+    if ns.hui and ns.hui.BuildRoundedBG and ns.hui.layer then
+        ns.hui.BuildRoundedBG(thBtn, 6, ns.hui.layer.L2, "both", true, 1)
+    end
+    local thText = thBtn:CreateFontString(nil, "OVERLAY")
+    thText:SetFont(ns.FONT, 14, "")
+    thText:SetPoint("CENTER", thBtn, "CENTER", 0, 0)
+    thText:SetTextColor(ACC[1], ACC[2], ACC[3])
+    local THRESH = { 5, 10, 15, 20, 30 }
+    local function SyncTh()
+        thText:SetText(tostring(ns.BagCleanup and ns.BagCleanup.MinFree() or 10))
+    end
+    thBtn:SetScript("OnClick", function()
+        ns.PlaySound(1)
+        local cur = ns.BagCleanup and ns.BagCleanup.MinFree() or 10
+        local idx = 1
+        for i = 1, #THRESH do
+            if THRESH[i] == cur then idx = i end
+        end
+        local nv = THRESH[idx % #THRESH + 1]
+        if ns.BagCleanup and ns.BagCleanup.SetMinFree then ns.BagCleanup.SetMinFree(nv) end
+        SyncTh()
+        O.Refresh()
+    end)
+    thBtn:SetScript("OnEnter", function()
+        Tip(thBtn, L["剩余格提醒"], L["背包剩余格数低于此值时显示背包清理卡"])
+    end)
+    thBtn:SetScript("OnLeave", HideTip)
+    SyncTh()
+
+    local clry = ColNext(4)
+    local clrLabel = opts:CreateFontString(nil, "OVERLAY")
+    clrLabel:SetFont(ns.FONT, 14, "")
+    clrLabel:SetPoint("TOPLEFT", opts, "TOPLEFT", ColX(4), clry - 4)
+    clrLabel:SetText(L["保留名单"])
+    clrLabel:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
+    local clrBtn = CreateFrame("Button", nil, opts, "BackdropTemplate")
+    clrBtn:SetSize(72, 20)
+    clrBtn:SetPoint("TOPRIGHT", opts, "TOPRIGHT", -12, clry + 1)
+    if ns.hui and ns.hui.BuildRoundedBG and ns.hui.layer then
+        ns.hui.BuildRoundedBG(clrBtn, 6, ns.hui.layer.L2, "both", true, 1)
+    end
+    local clrText = clrBtn:CreateFontString(nil, "OVERLAY")
+    clrText:SetFont(ns.FONT, 13, "")
+    clrText:SetPoint("CENTER", clrBtn, "CENTER", 0, 0)
+    clrText:SetTextColor(ACC[1], ACC[2], ACC[3])
+    clrText:SetText(L["清空保留"])
+    clrBtn:SetScript("OnClick", function()
+        ns.PlaySound(1)
+        if ns.BagCleanup and ns.BagCleanup.ClearKeep then ns.BagCleanup.ClearKeep() end
+        O.Refresh()
+    end)
+    clrBtn:SetScript("OnEnter", function()
+        Tip(clrBtn, L["清空保留名单"], L["之前右键保留的物品会重新出现在可摧毁清单里"])
+    end)
+    clrBtn:SetScript("OnLeave", HideTip)
+
     gear:SetScript("OnClick", function()
         ns.PlaySound(1)
         if InCombatLockdown and InCombatLockdown() then return end
@@ -1839,12 +2725,20 @@ function O.Init()
                 if cb.SetChecked then cb:SetChecked(c[k] and true or false)
                 elseif cb.PaintVoice then cb:PaintVoice() end
             end
+            if ns.BagCleanup then
+                if bcCb and bcCb.SetChecked then bcCb:SetChecked(ns.BagCleanup.On()) end
+                if heCb and heCb.SetChecked then heCb:SetChecked(ns.BagCleanup.DB and ns.BagCleanup.DB().hideEmpty == true) end
+                SyncTh()
+            end
+            if scCb and scCb.SetChecked then
+                local sc = ns.ZoneHint and ns.ZoneHint.CFG and ns.ZoneHint.CFG() or {}
+                scCb:SetChecked(sc.statusCard ~= false)
+            end
+            if rareCb and rareCb.SetChecked then rareCb:SetChecked((ns.ZoneHint and ns.ZoneHint.CFG and ns.ZoneHint.CFG() or {}).rareTarget ~= false) end
             SyncSize()
             SyncTentText()
-            local rx = (panel.GetRight and panel:GetRight() or 0) - 8
-            local ty = (panel.GetTop and panel:GetTop() or 0) - 40
-            opts:ClearAllPoints()
-            opts:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", rx, ty)
+            SyncMountOpts()
+            PlaceOpts()
             opts:Show()
         end
     end)
@@ -1887,99 +2781,67 @@ function O.Init()
         if ns.MainFrame and ns.MainFrame.SyncZoneHintCard then ns.MainFrame.SyncZoneHintCard() end
     end)
 
-    orbMenu = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
-    orbMenu:SetHeight(64)
-    orbMenu:SetFrameStrata("FULLSCREEN_DIALOG")
-    if ns.hui and ns.hui.SkinPopup and ns.hui.layer then
-        ns.hui.SkinPopup(orbMenu, 8, "both", ns.hui.layer.L2)
-        if ns.hui.SkinShadow then ns.hui.SkinShadow(orbMenu, nil, nil, 8) end
-    end
-    local oml1 = orbMenu:CreateFontString(nil, "OVERLAY")
-    oml1:SetFont(ns.FONT, 13, "")
-    oml1:SetPoint("TOPLEFT", orbMenu, "TOPLEFT", 12, -11)
-    oml1:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
-    local omb1 = CreateFrame("Button", nil, orbMenu)
-    omb1:SetSize(10, 28)
-    omb1:SetPoint("TOPLEFT", orbMenu, "TOPLEFT", 0, 0)
-    omb1:SetPoint("TOPRIGHT", orbMenu, "TOPRIGHT", 0, 0)
-    omb1:SetScript("OnEnter", function()
-        oml1:SetTextColor(ACC[1], ACC[2], ACC[3])
-        Tip(omb1, L["仅有待办时显示"], L["没有待办时隐藏圆形按钮"])
-    end)
-    omb1:SetScript("OnLeave", function()
-        oml1:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
-        HideTip()
-    end)
-    local oml2 = orbMenu:CreateFontString(nil, "OVERLAY")
-    oml2:SetFont(ns.FONT, 13, "")
-    oml2:SetPoint("TOPLEFT", orbMenu, "TOPLEFT", 12, -39)
-    oml2:SetText(L["永久关闭"])
-    oml2:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
-    local omb2 = CreateFrame("Button", nil, orbMenu)
-    omb2:SetSize(10, 28)
-    omb2:SetPoint("TOPLEFT", orbMenu, "TOPLEFT", 0, -30)
-    omb2:SetPoint("TOPRIGHT", orbMenu, "TOPRIGHT", 0, -30)
-    omb2:SetScript("OnEnter", function()
-        oml2:SetTextColor(ACC[1], ACC[2], ACC[3])
-        Tip(omb2, L["永久关闭"], L["等同于设置里的地图待办开关，可随时重新开启"])
-    end)
-    omb2:SetScript("OnLeave", function()
-        oml2:SetTextColor(TEXT[1], TEXT[2], TEXT[3])
-        HideTip()
-    end)
-    local function SyncMenuLabels()
-        local c = ns.ZoneHint and ns.ZoneHint.CFG and ns.ZoneHint.CFG() or {}
-        oml1:SetText(L["仅有待办时显示"] .. "：" .. ((c.onlyTodo and L["开"]) or L["关"]))
-    end
-    omb1:SetScript("OnClick", function()
-        ns.PlaySound(1)
-        local c = ns.ZoneHint and ns.ZoneHint.CFG and ns.ZoneHint.CFG()
-        if c then c.onlyTodo = not c.onlyTodo and true or false end
-        SyncMenuLabels()
-        if optCbs and optCbs.onlyTodo then optCbs.onlyTodo:SetChecked(c.onlyTodo and true or false) end
-        if current then
-            O.Update(current)
-        else
-            O.Refresh()
-        end
-    end)
-    omb2:SetScript("OnClick", function()
-        ns.PlaySound(1)
-        local c = ns.ZoneHint and ns.ZoneHint.CFG and ns.ZoneHint.CFG()
-        if c then c.on = false end
-        orbMenu:Hide()
-        Close()
-        if orb then orb:Hide() end
-        if ns.MainFrame and ns.MainFrame.SyncZoneHintCard then ns.MainFrame.SyncZoneHintCard() end
-    end)
-    orbMenu:Hide()
-
-    local function ToggleOrbMenu()
-        if orbMenu:IsShown() then
-            orbMenu:Hide()
-            return
-        end
-        SyncMenuLabels()
-        local w = math.max(TextW(oml1, 60), TextW(oml2, 60)) + 24
-        if w < 120 then w = 120 end
-        orbMenu:SetWidth(w)
-        orbMenu:ClearAllPoints()
-        orbMenu:SetPoint("TOPLEFT", orb, "BOTTOMRIGHT", 4, -4)
-        orbMenu:Show()
-        menuOpenedAt = (GetTime and GetTime()) or 0
-    end
-
     ApplyOrbSize()
     orb:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    orb:SetScript("OnClick", function(_, btn)
-        ns.PlaySound(1)
-        if btn == "RightButton" then
-            ToggleOrbMenu()
-        else
-            if orbMenu then orbMenu:Hide() end
-            Toggle()
+    orb:SetAttribute("useOnKeyDown", false)
+    orb:SetScript("PreClick", function(self, mouse)
+        if mouse == "RightButton" then
+            if type(IsShiftKeyDown) == "function" and IsShiftKeyDown() then
+                self:SetAttribute("type", nil)
+                return
+            end
+            local name = self.pingTarget or ""
+            if name == "" then
+                self:SetAttribute("type", nil)
+                return
+            end
+            self:SetAttribute("macrotext", self.pingMacro or PingMacroFor(name))
+            self:SetAttribute("type", "macro")
+        elseif self:GetAttribute("type") then
+            self:SetAttribute("type", nil)
         end
     end)
+    orb:HookScript("OnClick", function(self, btn, down)
+        if down then return end
+        ns.PlaySound(1)
+        if btn == "RightButton" then
+            if type(IsShiftKeyDown) == "function" and IsShiftKeyDown() then
+                local c = ns.ZoneHint and ns.ZoneHint.CFG and ns.ZoneHint.CFG()
+                if c then c.on = false end
+                Close()
+                if orb then
+                    if type(InCombatLockdown) == "function" and InCombatLockdown() then
+                        orb.hidePending = true
+                    else
+                        orb:Hide()
+                    end
+                end
+                if ns.MainFrame and ns.MainFrame.SyncZoneHintCard then ns.MainFrame.SyncZoneHintCard() end
+                return
+            end
+            local name = (orb and orb.pingTarget) or ""
+            if name == "" then
+                print("|cff46bf72[无限副本手册]|r " .. L["请先在状态卡填写目标名"])
+            elseif #O.rareList > 0 then
+                O.RotateRare()
+            end
+            return
+        end
+        Toggle()
+    end)
+    if not orb.dfRegen then
+        local regen = CreateFrame("Frame")
+        regen:RegisterEvent("PLAYER_REGEN_ENABLED")
+        regen:SetScript("OnEvent", function()
+            if orb and orb.pingDirty then O.SyncPing() end
+            if orb and orb.hidePending then
+                orb.hidePending = nil
+                orb:Hide()
+            end
+        end)
+        orb.dfRegen = regen
+    end
+    O.SyncPing()
 
     orb:SetScript("OnEnter", function()
         hovered = true
@@ -1998,7 +2860,7 @@ function O.Init()
         else
             desc = L["本图暂无待办"]
         end
-        Tip(orb, zone ~= "" and zone or L["当前地图"], desc, L["左键展开 · 右键永久关闭 · 拖拽移动"])
+        Tip(orb, zone ~= "" and zone or L["当前地图"], desc, { L["左键展开　　拖拽移动"], L["右键标记目标并Ping"], L["Shift+右键永久关闭"] })
     end)
 
     orb:SetScript("OnLeave", function()
@@ -2020,6 +2882,7 @@ function O.Init()
     orb:SetScript("OnDragStop", function()
         orb:StopMovingOrSizing()
         SavePos()
+        if O.InCombat() then return end
         if panel and panel:IsShown() then
             panel:ClearAllPoints()
             panel:SetPoint("LEFT", orb, "RIGHT", 8, 0)
@@ -2040,27 +2903,28 @@ function O.Init()
     watcher:RegisterEvent("GLOBAL_MOUSE_DOWN")
     watcher:SetScript("OnEvent", function()
         local now = (GetTime and GetTime()) or 0
-        if orbMenu and orbMenu:IsShown() then
-            if now - menuOpenedAt >= 0.2 and not orbMenu:IsMouseOver() and not orb:IsMouseOver() then
-                orbMenu:Hide()
-            end
-            return
-        end
         if not panel or not panel:IsShown() then return end
         if now - openedAt < 0.2 then return end
         if _G.DFFoodMenuUp then return end
         if panel:IsMouseOver() then return end
+        if IsEditingText() then return end
+        if type(cards) == "table" then
+            for i = 1, #cards do
+                local c = cards[i]
+                if c and c.edit and c.edit.IsMouseOver and c.edit:IsMouseOver() then return end
+            end
+        end
         if opts and opts:IsShown() and opts:IsMouseOver() then return end
         if orb:IsMouseOver() then return end
         Close()
     end)
 
     if UISpecialFrames then
-        local found = false
-        for i = 1, #UISpecialFrames do
-            if UISpecialFrames[i] == "DFZoneOrbPanel" then found = true break end
+        for i = #UISpecialFrames, 1, -1 do
+            local n = UISpecialFrames[i]
+            if n == "DFZoneOrbPanel" or n == "DFZoneOrbEscProxy" then table.remove(UISpecialFrames, i) end
         end
-        if not found then table.insert(UISpecialFrames, "DFZoneOrbPanel") end
+        table.insert(UISpecialFrames, "DFZoneOrbEscProxy")
     end
     panel:HookScript("OnHide", function()
         if FoodMenuClose then FoodMenuClose() end
@@ -2069,6 +2933,42 @@ function O.Init()
 
     if panel.title then panel.title:SetText("") end
     cards, heads, subRows = {}, {}, {}
+    panel:EnableMouse(false)
+end
+
+local swapBox = nil
+function O.SaySwap()
+    if not orb then return end
+    if not swapBox then
+        swapBox = CreateFrame("Frame", nil, UIParent)
+        swapBox:SetHeight(32)
+        if ns.hui and ns.hui.SkinPopup and ns.hui.layer then
+            ns.hui.SkinPopup(swapBox, 8, "both", ns.hui.layer.L1)
+        end
+        local fs = swapBox:CreateFontString(nil, "OVERLAY")
+        fs:SetFont(ns.FONT, 14, "")
+        fs:SetPoint("CENTER", swapBox, "CENTER", 0, 0)
+        fs:SetTextColor(ACC[1], ACC[2], ACC[3])
+        fs:SetText(L["换装成功"])
+        swapBox.fs = fs
+        swapBox:Hide()
+        swapBox:SetScript("OnUpdate", function(self, el)
+            self.swT = (self.swT or 0) + (tonumber(el) or 0)
+            if self.swT >= 1.5 then
+                self:Hide()
+            elseif self.swT > 0.7 then
+                self:SetAlpha(1 - (self.swT - 0.7) / 0.8)
+            end
+        end)
+    end
+    local w = (swapBox.fs:GetStringWidth() or 60) + 30
+    if w < 70 then w = 70 end
+    swapBox:SetWidth(w)
+    swapBox:ClearAllPoints()
+    swapBox:SetPoint("BOTTOM", orb, "TOP", 0, 10)
+    swapBox:SetAlpha(1)
+    swapBox.swT = 0
+    swapBox:Show()
 end
 
 function O.Refresh()
@@ -2077,12 +2977,16 @@ function O.Refresh()
     local res = ns.ZoneHint.Collect(ctx)
     res.key = ns.ZoneHint.Key(ctx)
     O.Update(res)
-    if (res.total or 0) == 0 then
+    if (res.total or 0) == 0 and not res.__bagActive and not res.__statusActive then
         lastN = 0
         if badge then badge:Hide() end
         if not (opts and opts:IsShown()) then Close() end
     end
     return res
+end
+
+function O.RefreshBag()
+    if current then O.Update(current) end
 end
 
 function O.ForceOpen(res)
@@ -2100,6 +3004,8 @@ function O.SetHeader(res)
     local n = (res and res.total) or 0
     if n > 0 then
         panel.count:SetText(string.format(L["本图待办 %d"], n))
+    elseif res and res.__bagActive then
+        panel.count:SetText(L["背包待清理"])
     else
         panel.count:SetText(L["本图暂无待办"])
     end
@@ -2120,6 +3026,11 @@ end
 
 function O.CbPreviewToggle()
     if not orb then return end
+    if cbPanel and cbPanel:IsShown() then
+        cbPanel:Hide()
+        return
+    end
+    if InCombat() and not cbPanel then return end
     if not cbPanel then
         local f = CreateFrame("Frame", nil, orb, "BackdropTemplate")
         f:SetWidth(248)
@@ -2166,7 +3077,7 @@ function O.CbPreviewToggle()
     if body == "" then body = L["本图暂无待办"] end
     cbPanel.body:SetText(body)
     local lines = select(2, body:gsub("\n", "")) + 1
-    cbPanel:SetHeight(46 + lines * 17)
+    if not InCombat() then cbPanel:SetHeight(46 + lines * 17) end
     cbPanel:Show()
 end
 
@@ -2176,18 +3087,15 @@ regenWatch:RegisterEvent("PLAYER_REGEN_DISABLED")
 regenWatch:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_REGEN_DISABLED" then
         if cbPanel and cbPanel:IsShown() then cbPanel:Hide() end
-        if orbMenu and orbMenu:IsShown() then orbMenu:Hide() end
         if FoodMenuClose then FoodMenuClose() end
-        if panel and panel:IsShown() then
-            if InCombatLockdown and InCombatLockdown() then
-                closePending = true
-            else
-                hideToken = hideToken + 1
-                panel:SetAlpha(1)
-                panel:Hide()
-            end
-        end
+        if panel and panel:IsShown() then CombatHide() end
         return
+    end
+    if orb and orb:GetNumPoints() == 0 then ApplyPos() end
+    if orbSizeDirty then ApplyOrbSize() end
+    for f in pairs(pendShow) do
+        pendShow[f] = nil
+        if not f:IsShown() then f:Show() end
     end
     if cbPanel and cbPanel:IsShown() then cbPanel:Hide() end
     if closePending then

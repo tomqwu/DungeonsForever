@@ -1,4 +1,4 @@
-if (type(GetLocale) ~= "function") or GetLocale() ~= "enUS" then return end
+if (type(DF_Locale) ~= "function") or DF_Locale() ~= "enUS" then return end
 
 local ns = _G.DF_NS or {}
 
@@ -53,6 +53,7 @@ ns.ClassTier = {
         DRUID = {
             { key = "balance", name = "Balance", nameEn = "Balance", icon = "Interface\\Icons\\spell_nature_starfall" },
             { key = "feral", name = "Feral", nameEn = "Feral", icon = "Interface\\Icons\\ability_racial_bearform" },
+            { key = "bear", name = "Guardian", nameEn = "Guardian", icon = "Interface\\Icons\\ability_druid_demoralizingroar" },
             { key = "resto", name = "Restoration", nameEn = "Restoration", icon = "Interface\\Icons\\Spell_Nature_HealingTouch" },
         },
     },

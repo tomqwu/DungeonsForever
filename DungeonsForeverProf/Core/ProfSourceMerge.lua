@@ -26,17 +26,10 @@ end
 
 local function VendorEntry(v)
     local zone = ZoneName(v.area)
-    return {
-        id = v.id,
-        name = v.name,
-        zone = (zone ~= "" and zone or nil),
-        area = v.area,
-        side = v.side,
-        price = v.price,
-        cur = v.cur,
-        amt = v.amt,
-        stock = v.stock,
-    }
+    local result = {}
+    for k, value in pairs(v) do result[k] = value end
+    result.zone = zone ~= "" and zone or v.zone
+    return result
 end
 
 local function DropEntry(d)
@@ -106,6 +99,10 @@ function M.Fill(row)
     s.__srcDone = true
     local vs = src.v
     if type(vs) == "table" and #vs > 0 then
+        if ns.ProfSourcesMeta and ns.ProfSourcesMeta.schemaVersion == 2 then
+            s.vendors = {}
+            for _, v in ipairs(vs) do s.vendors[#s.vendors + 1] = VendorEntry(v) end
+        else
         local list = s.vendors
         if type(list) ~= "table" then
             list = {}
@@ -119,6 +116,7 @@ function M.Fill(row)
         for i = 1, #vs do
             local v = vs[i]
             if type(v) == "table" and v.id then MergeVendor(byId, list, v) end
+        end
         end
     end
     local ds = src.d
@@ -139,6 +137,18 @@ function M.Fill(row)
         for i = 1, #ds do
             local d = ds[i]
             if type(d) == "table" and d.npc then MergeDrop(byName, list, d) end
+        end
+    end
+    local qs = src.q or src.quests
+    if type(qs) == "table" and #qs > 0 then
+        local list = s.quests
+        if type(list) ~= "table" then
+            list = {}
+            s.quests = list
+        end
+        for i = 1, #qs do
+            local q = qs[i]
+            if type(q) == "table" and q.id then list[#list + 1] = q end
         end
     end
     return s
@@ -162,26 +172,31 @@ function M.Primary(src)
     if type(src) ~= "table" then return nil end
     local vs = VendorList(src)
     if vs then
-        local gold, currency = false, false
+        local gold, currency, plain = false, false, false
         for i = 1, #vs do
             local v = vs[i]
             if type(v) == "table" then
                 local price = tonumber(v.price) or 0
                 local cur = tonumber(v.cur) or 0
-                if price > 0 then
+                if v.hasExtendedCost or #(v.currencies or {}) > 0 or #(v.costItems or {}) > 0 then
+                    currency = true
+                elseif price > 0 or v.price == 0 and v.priceVerified then
                     gold = true
                 elseif cur ~= 0 then
                     currency = true
+                else
+                    plain = true
                 end
             end
         end
         if gold then return "vendor" end
         if currency then return "currency" end
+        if plain then return "vendor" end
     end
     local ds = DropList(src)
     if ds and #ds > 0 then return "drop" end
     if src.worldDrop then return "drop" end
-    local qs = src.quests
+    local qs = src.quests or src.q
     if type(qs) == "table" and #qs > 0 then return "quest" end
     if src.questOnly then return "quest" end
     return nil
@@ -193,7 +208,8 @@ function M.CurrencyCount(src)
     if not vs then return n end
     for i = 1, #vs do
         local v = vs[i]
-        if type(v) == "table" and (tonumber(v.price) or 0) <= 0 and (tonumber(v.cur) or 0) ~= 0 then
+        if type(v) == "table" and (v.hasExtendedCost or (tonumber(v.cur) or 0) ~= 0
+            or #(v.currencies or {}) > 0 or #(v.costItems or {}) > 0) then
             n = n + 1
         end
     end

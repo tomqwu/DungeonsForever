@@ -24,6 +24,7 @@ local learningChecks = setmetatable({}, {__mode="k"})
 local performance = {creditBuilds=0,historyScans=0}
 local completionTimer, observationGeneration = false, 0
 local idleTimer, checkingIdle, combatPaused
+local changeTimer, pendingChanges = nil, {}
 local IDLE_LIMIT = 48 * 60 * 60
 local observedActive, observedReceipts
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
@@ -227,6 +228,11 @@ local function referencesChanged()
 end
 local function changed(run,lifecycleReason)
     run.progressVersion=(run.progressVersion or 0)+1;run.updatedAt=now()
+    if (not lifecycleReason or lifecycleReason=="progress" or lifecycleReason=="inventory")
+        and pendingChanges[run.planID] then
+        pendingChanges[run.planID]={slug=run.slug,run=run,reason=lifecycleReason or pendingChanges[run.planID].reason or "progress"}
+        return
+    end
     referencesChanged()
     if XP.GetRecipeTotals and readablePlan(run) then
         run.byRecipe=XP.GetRecipeTotals(run.slug,run.planID,true)
@@ -248,7 +254,28 @@ local function changed(run,lifecycleReason)
         end
         run.materialLedger=ledger
     end
-    for _,fn in ipairs(listeners) do pcall(fn,run.slug,run,lifecycleReason) end
+    if lifecycleReason=="ended" or lifecycleReason=="dropped" or lifecycleReason=="completed"
+        or lifecycleReason=="archived" or lifecycleReason=="catalogueFiltered" then
+        for _,fn in ipairs(listeners) do pcall(fn,run.slug,run,lifecycleReason) end
+        return
+    end
+    pendingChanges[run.planID]={slug=run.slug,run=run,reason=lifecycleReason or "progress"}
+    if changeTimer then return end
+    if C_Timer and C_Timer.After then
+        changeTimer=true
+        C_Timer.After(0.05,function()
+            changeTimer=nil
+            local batch=pendingChanges;pendingChanges={}
+            for _,notification in pairs(batch) do
+                for _,fn in ipairs(listeners) do pcall(fn,notification.slug,notification.run,notification.reason) end
+            end
+        end)
+    else
+        local batch=pendingChanges;pendingChanges={}
+        for _,notification in pairs(batch) do
+            for _,fn in ipairs(listeners) do pcall(fn,notification.slug,notification.run,notification.reason) end
+        end
+    end
 end
 function XP.PerformanceCounters()
     return {creditBuilds=performance.creditBuilds,historyScans=performance.historyScans}
@@ -345,7 +372,7 @@ local function pruneArchived(slug)
     repeat
         local list={}
         for id,r in pairs(c.runs) do
-            if r.slug==slug and r.status~="active" and readablePlan(r) then
+            if r.slug==slug and r.status~="active" and (r.compact or readablePlan(r)) then
                 list[#list+1]={id=id,run=r,at=tonumber(r.archivedAt or r.updatedAt) or 0}
             end
         end
@@ -359,13 +386,90 @@ local function pruneArchived(slug)
             if hasFacts then kept=kept+1 end
             if (not hasFacts or kept>3) and XP.Remove(slug,entry.id) then removed=true end
         end
-    until not removed
+        until not removed
+end
+local function dropRefs(run,gone)
+    if type(run)~="table" then return end
+    if gone[run.inheritedFrom] then run.inheritedFrom=nil end
+    if gone[run.originPlanID] then run.originPlanID=nil end
+    local plan=type(run.plan)=="table" and run.plan or nil
+    if not plan then return end
+    if gone[plan.executionSourcePlanID] then plan.executionSourcePlanID=nil end
+    local opts=type(plan.executionOptions)=="table" and plan.executionOptions or nil
+    if opts and gone[opts.executionSourcePlanID] then opts.executionSourcePlanID=nil end
+end
+function XP.PruneAll(limit)
+    limit=tonumber(limit) or 1
+    local prof=ns.ProfessionDB(false)
+    local track=type(prof)=="table" and prof.track or nil
+    if type(track)~="table" then return 0 end
+    local removed=0
+    for _,c in pairs(track) do
+        if type(c)=="table" and type(c.runs)=="table" then
+            local pinned={}
+            for _,id in pairs(c.active or {}) do pinned[id]=true end
+            for _,sources in ipairs({c.preparing or {},c.continuation or {}}) do
+                for _,source in pairs(sources) do
+                    if type(source)=="table" and source.sourcePlanID then pinned[source.sourcePlanID]=true end
+                end
+            end
+            local groups={}
+            for id,run in pairs(c.runs) do
+                if type(run)=="table" and run.status~="active" and not pinned[id] then
+                    local slug=tostring(run.slug or "")
+                    local bucket=groups[slug]
+                    if not bucket then bucket={};groups[slug]=bucket end
+                    bucket[#bucket+1]={id=id,at=tonumber(run.archivedAt or run.updatedAt or run.createdAt) or 0,fact=recorded(run)}
+                end
+            end
+            local gone={}
+            for _,bucket in pairs(groups) do
+                table.sort(bucket,function(a,b)
+                    if a.at~=b.at then return a.at>b.at end
+                    return tostring(a.id)>tostring(b.id)
+                end)
+                local kept=0
+                for _,entry in ipairs(bucket) do
+                    if entry.fact and kept<limit then kept=kept+1 else gone[entry.id]=true end
+                end
+            end
+            if next(gone) then
+                for id in pairs(gone) do
+                    local run=c.runs[id]
+                    c.runs[id]=nil
+                    for _,contracts in pairs(c.endedContracts or {}) do
+                        for signature,planID in pairs(contracts) do if planID==id then contracts[signature]=true end end
+                    end
+                    if type(run)=="table" then
+                        creditCaches[run]=nil
+                        if run.plan then learningChecks[run.plan]=nil end
+                    end
+                    removed=removed+1
+                end
+                for _,run in pairs(c.runs) do dropRefs(run,gone) end
+                referencesChanged()
+            end
+        end
+    end
+    if removed>0 and XP.RefreshObservation then pcall(XP.RefreshObservation) end
+    return removed
 end
 function XP.GetSummary(slug,planID)
     local run
     if planID then run=XP.Get(slug,planID) else run=XP.GetRun(slug) end
     if not run and not planID then run=XP.GetHistory(slug)[1] end
     if not run then return end
+    if run.compact then
+        local comp=run.compact
+        local total=comp.total or #comp.steps
+        return {planID=run.planID,status=run.status,archiveReason=run.archiveReason,
+            current=run.currentIndex or 1,total=total,done=min(total,(run.currentIndex or 1)-1),
+            planned=comp.planned or 0,casts=run.attemptsDone or 0,skill=skill(slug),
+            target=comp.target,startSkill=run.startSkill or comp.startSkill,
+            finished=run.finished or run.archiveReason=="completed" or run.status=="done",
+            stale=comp.stale,staleReason=comp.staleReason,
+            learningBlocked=run.learningBlocked,learningBlockReason=run.learningBlockReason}
+    end
     local plan=readablePlan(run)
     if not plan then return nil,"historyUnreadable" end
     local list=steps(plan);local planned=0
@@ -411,6 +515,7 @@ local function ready(result)
         and not result.finalizing
         and result.status ~= "selection_required"
         and result.status ~= "recalculate_required"
+        and not result.pricingPolicyStale
         and #steps(result) > 0
 end
 local function originSignature(plan)
@@ -437,6 +542,29 @@ local function releaseSourceReferences(run)
         if plan.executionOptions then plan.executionOptions.executionSourcePlanID=nil end
     end
 end
+local function compactRun(run)
+    if type(run)~="table" or run.compact then return end
+    local plan=readablePlan(run)
+    run.plan=nil
+    if not plan then return end
+    local list=steps(plan)
+    local comp={steps={},total=#list,target=plan.target or plan.targetSkill,
+        startSkill=plan.startSkill or plan.start,planned=0,
+        stale=plan.stale or nil,staleReason=plan.staleReason or nil}
+    for i,seg in ipairs(list) do
+        local want=tonumber(seg[4]) or 0
+        local p=seg.segmentID~=nil and run.progress and run.progress[seg.segmentID] or nil
+        local entry={tonumber(seg[3]) or 0,tonumber(seg[1]) or 0,tonumber(seg[2]) or 0,want,p and (tonumber(p.casts) or 0) or 0}
+        local cost=tonumber(seg.cost)
+        if cost then entry[6]=cost;if seg.unpriced then entry[7]=true end end
+        comp.steps[i]=entry
+        comp.planned=comp.planned+want
+    end
+    run.compact=comp
+    run.progress=nil;run.materialLedger=nil;run.supplements=nil;run.completionDue=nil
+    creditCaches[run]=nil
+end
+local inventoryFromPlan
 local function archive(c,slug,reason)
     local run=c.runs[c.active[slug]]
     if run then
@@ -466,15 +594,19 @@ function XP.End(slug,reason)
     if job then
         job.cancelled=true;job.state.inFlight=false;job.state.status="cancelled";jobs[run.planID]=nil
     end
+    local readable=readablePlan(run)
+    local continuationInventory
+    if readable then continuationInventory=select(1,inventoryFromPlan(run,slug)) end
     archive(c,slug,reason or "ended")
     run.status="archived";run.archivedAt=run.archivedAt or now();run.archiveReason=reason or "ended"
     run.endedAt=run.endedAt or now();run.completionDue=nil
-    c.continuation[slug]=readablePlan(run) and {sourcePlanID=run.planID} or nil
+    c.continuation[slug]=readable and {sourcePlanID=run.planID,inventory=continuationInventory} or nil
     if run.originSignature then
         c.endedContracts[slug]=c.endedContracts[slug] or {};c.endedContracts[slug][run.originSignature]=run.planID
     end
     if c.trackingSlug==slug then c.trackingSlug=nil end
     changed(run,"ended")
+    compactRun(run)
     pruneArchived(slug)
     if XP.RefreshObservation then XP.RefreshObservation() end
     return run
@@ -571,7 +703,7 @@ function XP.Bind(slug,result,opts)
     if not ready(normalized) then return nil,"pending" end
     local learnable,learningReason=XP.ValidateLearning(normalized,slug,steps(normalized)[1])
     if not learnable then return nil,learningReason end
-    if existing then archive(c,slug,"replace") end
+    if existing then archive(c,slug,"replace");compactRun(existing) end
     c.nextID=(c.nextID or 0)+1
     local planID=normalized.planID or normalized.executionPlanID or (character()..":track:"..c.nextID)
     if c.runs[planID] then planID=planID..":"..c.nextID end
@@ -583,6 +715,7 @@ function XP.Bind(slug,result,opts)
         ids[old]=id;seg.segmentID=id;seg.actionID=id
     end
     for _,seg in ipairs(steps(plan)) do for _,a in ipairs(seg.allocations or {}) do if ids[a.consumerID] then a.consumerID=ids[a.consumerID] end end end
+    for _,a in ipairs(plan.seedAllocations or {}) do if ids[a.consumerID] then a.consumerID=ids[a.consumerID] end end
     for _,seg in ipairs(steps(plan)) do for _,a in ipairs(seg.reserve and seg.reserve.allocations or {}) do
         if ids[a.consumerID] then a.consumerID=ids[a.consumerID] end
     end end
@@ -669,8 +802,21 @@ local function creditsFor(run,target,skillSnapshot)
         local o={seg=seg,index=index,record=record,funded=funded,required=requiredOutputs(seg,run),
             consumed={},waived={},destinations={},released={}}
         list[#list+1]=o;bySegment[seg.segmentID]=o;used[seg.segmentID]={}
+        local alias=type(seg.segmentID)=="string" and seg.segmentID:match("(segment:.*)$")
+        if alias then bySegment[alias]=o end
         for _,m in ipairs(recipe(seg,run.slug).mats or {}) do
             used[seg.segmentID][m[1]]=(used[seg.segmentID][m[1]] or 0)+m[2]*casts
+        end
+    end
+    local seedReservations={}
+    for _,allocation in ipairs(run.plan.seedAllocations or {}) do
+        local id=allocation.consumerID
+        local consumer=bySegment[id] or type(id)=="string" and bySegment[id:match("(segment:.*)$")]
+        local item=allocation.itemID
+        if item and (allocation.count or 0)>0 then
+            local spent=consumer and min(allocation.count,used[consumer.seg.segmentID][item] or 0) or 0
+            if consumer then used[consumer.seg.segmentID][item]=(used[consumer.seg.segmentID][item] or 0)-spent end
+            seedReservations[#seedReservations+1]={item=item,count=allocation.count-spent,consumer=consumer}
         end
     end
     for _,o in ipairs(list) do
@@ -707,6 +853,17 @@ local function creditsFor(run,target,skillSnapshot)
     end
     local function allocateBags()
         local stock=copy(inventory)
+        local released={}
+        for _,reservation in ipairs(seedReservations) do
+            local item=reservation.item
+            local consumer=reservation.consumer
+            local key=consumer and consumer.seg.segmentID
+            local byItem=key and released[key] or {}
+            if key then released[key]=byItem end
+            local skip=consumer and max(0,(consumer.released[item] or 0)-(byItem[item] or 0)) or 0
+            skip=min(skip,reservation.count);byItem[item]=(byItem[item] or 0)+skip
+            if stock[item] then stock[item]=max(0,stock[item]-reservation.count+skip) end
+        end
         for _,o in ipairs(list) do
             o.credited={};o.available={};o.unknown=false
             for item,required in pairs(o.required) do
@@ -967,6 +1124,7 @@ function XP.Sync(slug,result)
         end
     end
     local index=1
+    local previousIndex=run.currentIndex or 1
     local skillSnapshot=E and E.Professions and E.Professions()
     local credits={}
     while index<=#steps(run.plan) do local p=XP.Progress(slug,index,skillSnapshot,nil,credits);if not p.complete then break end;index=index+1 end
@@ -979,7 +1137,8 @@ function XP.Sync(slug,result)
         if now()>=run.completionDue then XP.End(slug,"completed")
         elseif XP.RefreshObservation then XP.RefreshObservation() end
     else run.completionDue=nil end
-    if observed and run.status=="active" then changed(run) end
+    if observed and run.status=="active" then changed(run)
+    elseif run.currentIndex~=previousIndex and run.status=="active" then changed(run,"progress") end
     return run
 end
 local function matchingSegment(run,spell,id)
@@ -1254,14 +1413,7 @@ function XP.VerifyOutput(slug,id,item,total)
     invalidateCredits(run)
     XP.Sync(slug);changed(run);return true
 end
-function XP.GetContinuation(slug)
-    local c=db();local run=XP.GetRun(slug)
-    if not run then
-        local source=c.preparing[slug] or c.continuation[slug];run=source and c.runs[source.sourcePlanID]
-        if not run and source and source.sourcePlanID then return nil,"historyUnreadable" end
-    end
-    if not run then return {} end
-    if not readablePlan(run) then return nil,"historyUnreadable" end
+inventoryFromPlan=function(run,slug)
     local items={}
     for _,seg in ipairs(steps(run.plan)) do
         local rec=recipe(seg,slug)
@@ -1280,14 +1432,25 @@ function XP.GetContinuation(slug)
     end
     return inventory
 end
+function XP.GetContinuation(slug)
+    local c=db();local run=XP.GetRun(slug);local source
+    if not run then
+        source=c.preparing[slug] or c.continuation[slug]
+        if type(source)=="table" and type(source.inventory)=="table" then return copy(source.inventory) end
+        run=source and c.runs[source.sourcePlanID]
+    end
+    if not run then return {} end
+    if not readablePlan(run) then return {} end
+    return inventoryFromPlan(run,slug)
+end
 function XP.PrepareRecalculate(slug)
     local c=db();local run=XP.GetRun(slug);local seed,reason=XP.GetContinuation(slug)
     if not seed then return nil,nil,reason or "historyUnreadable" end
     local previous=c.preparing[slug]
     local source=c.continuation[slug]
     local preparing={hadActive=run~=nil and run.status=="active" or previous and previous.hadActive or false,
-        sourcePlanID=run and run.planID or previous and previous.sourcePlanID or source and source.sourcePlanID,inventory=copy(seed)}
-    if run then archive(c,slug,"recalculate");changed(run) end
+        sourcePlanID=run and run.planID or previous and previous.sourcePlanID or (source and type(source.inventory)=="table" and source.sourcePlanID) or nil,inventory=copy(seed)}
+    if run then archive(c,slug,"recalculate");compactRun(run);changed(run) end
     c.preparing[slug]=preparing;referencesChanged();pruneArchived(slug)
     if XP.RefreshObservation then XP.RefreshObservation() end;return seed,preparing.sourcePlanID
 end

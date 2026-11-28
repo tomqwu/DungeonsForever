@@ -14,7 +14,7 @@ local CACHE_TTL = 600
 local CACHE_SLOTS = 4
 local G_YELLOW, G_GREEN = 0.5, 0.05
 
-local SCHEME_ORDER = { "cheapest", "stable", "matcost", "crafts", "optim" }
+local SCHEME_ORDER = { "cheapest", "matcost", "crafts", "optim" }
 local SCHEME_LABEL = {
     cheapest = "最省钱",
     stable = "稳定升级",
@@ -25,14 +25,21 @@ local SCHEME_LABEL = {
 function RA.SchemeOrder() return SCHEME_ORDER end
 function RA.SchemeLabel(s)
     local k = (s and SCHEME_LABEL[s]) and SCHEME_LABEL[s] or "最省钱"
+    local L = ns.L
     return type(L) == "table" and L[k] or k
 end
 
-function RA.Available()
+local function AuctionatorReady()
     return type(Auctionator) == "table"
         and type(Auctionator.API) == "table"
         and type(Auctionator.API.v1) == "table"
         and type(Auctionator.API.v1.GetAuctionPriceByItemID) == "function"
+end
+
+function RA.Available()
+    if AuctionatorReady() then return true end
+    local eb = ns.EasyBridge
+    return (eb and eb.Available and eb.Available()) and true or false
 end
 
 local function CallAPI(fn, ...)
@@ -44,6 +51,9 @@ end
 local priceCache = {}
 local NEG_TTL = 60
 local ahReason, ahAge = {}, {}
+local apMemo={}
+local apRev,apAt,apChk=nil,0,0
+local AP_TTL=120
 
 local function AHPrice(id)
     local c = priceCache[id]
@@ -54,15 +64,21 @@ local function AHPrice(id)
         if t0 and (now - t0) < NEG_TTL then return nil end
     end
     local p
-    if RA.Available() then
+    if AuctionatorReady() then
         p = CallAPI(Auctionator.API.v1.GetAuctionPriceByItemID, id)
         if type(p) ~= "number" or p <= 0 then p = nil end
         if p and type(Auctionator.API.v1.GetAuctionAgeByItemID) == "function" then
             local age = CallAPI(Auctionator.API.v1.GetAuctionAgeByItemID, id)
             if type(age) == "number" then
                 if age > MAX_STALE then
-                    ahReason[id], ahAge[id] = "stale", age
-                    p = nil
+                    local bridge = ns.AuctionBridge
+                    if bridge and bridge.ForceExpiredActive and bridge.ForceExpiredActive() then
+                        ahAge[id] = age
+                        ahReason[id] = nil
+                    else
+                        ahReason[id], ahAge[id] = "stale", age
+                        p = nil
+                    end
                 end
                 if age < (priceCache.__minAge or math.huge) then
                     priceCache.__minAge = age
@@ -70,7 +86,7 @@ local function AHPrice(id)
             end
         end
     else
-        ahReason[id] = "noapi"
+        ahReason[id] = RA.Available() and "norec" or "noapi"
     end
     if not p and ahReason[id] ~= "stale" and ahReason[id] ~= "noapi" then
         ahReason[id] = "norec"
@@ -85,6 +101,13 @@ local function AHPrice(id)
 end
 
 local vendorCache = {}
+
+function RA.ResetPrices()
+    priceCache = {}
+    for k in pairs(apMemo) do apMemo[k]=nil end
+    vendorCache = {}
+    ahReason, ahAge = {}, {}
+end
 
 local function VendorPrice(id)
     local hit = vendorCache[id]
@@ -131,8 +154,16 @@ function RA.MaterialPurchases(id,need,opts)
         or not snap and economy and economy.NonAuctionableItem and economy.NonAuctionableItem(id) then auction=nil end
     local available=opts.auctionRemaining and opts.auctionRemaining[id]
     if available==nil and supply then available=supply.quantity end
+    local depth=ns.ProfAuctionDepth
+    local book=snap and snap.auctionDepth and snap.auctionDepth[id]
+    local used=opts.auctionUsed and opts.auctionUsed[id] or 0
+    if book then
+        available=math.min(available or math.huge,math.max(0,book.total-used))
+        if not (snap.nonAuctionable or {})[id] then auction=book.prices[1] end
+    end
     return economy.MaterialPurchases(id,need,{offers=offers,auction=auction,supply=supply,
-        available=available,faction=snap and snap.faction})
+        available=available,faction=snap and snap.faction,
+        auctionCost=book and function(count)return depth.Cost(book,used,count)end or nil})
 end
 
 function RA.PreferSharedFormula(entry,materialNeed,opts)
@@ -261,14 +292,67 @@ local function MatListCost(mats)
     return total, unpriced
 end
 
+local function TrimLowPrice(levels, qty)
+    if type(levels) ~= "table" or type(qty) ~= "number" or qty <= 0 then return nil end
+    local frac = 0.10
+    if qty >= 10000 then
+        frac = 0.01
+    elseif qty > 1000 then
+        frac = 0.10 - 0.09 * (math.log(qty) / math.log(10) - 3)
+    end
+    local cut = math.floor(qty * frac)
+    local acc = 0
+    local anchor
+    for _, l in ipairs(levels) do
+        acc = acc + (tonumber(l[2]) or 0)
+        if acc >= cut then
+            local p = tonumber(l[1])
+            if p and p > 0 and p ~= math.huge then anchor = p end
+            break
+        end
+    end
+    if not anchor then return nil end
+    local hookCut = anchor * 0.75
+    local remain, cost = 100, 0
+    for _, l in ipairs(levels) do
+        local p = tonumber(l[1])
+        if p and p >= hookCut then
+            local take = math.min(tonumber(l[2]) or 0, remain)
+            cost = cost + p * take
+            remain = remain - take
+            if remain <= 0 then break end
+        end
+    end
+    if remain <= 0 then return cost / 100 end
+    return anchor
+end
+
 function RA.AHPriceOf(itemID)
     if not itemID then return nil end
+    local now=(type(time)=="function") and time() or 0
+    if (now-apChk)>=1 then
+        apChk=now
+        local bridge=ns.AuctionBridge
+        local rev=bridge and bridge.SupplyRevision and bridge.SupplyRevision() or 0
+        if apRev~=rev or (now-apAt)>=AP_TTL then
+            apRev=rev;apAt=now
+            for k in pairs(apMemo) do apMemo[k]=nil end
+        end
+    end
+    local hit=apMemo[itemID]
+    if hit~=nil then return hit or nil end
     local bridge=ns.AuctionBridge
     local supply=bridge and bridge.GetAuctionSupply and bridge.GetAuctionSupply(itemID)
-    if supply and (supply.quantity or 0)>0 and type(supply.market)=="number" and supply.market>0 then
-        return supply.market
+    local v
+    if supply and (supply.quantity or 0)>0 then
+        local depth=bridge.GetAuctionDepth and bridge.GetAuctionDepth(itemID)
+        local tlp=TrimLowPrice(depth and depth.levels, supply.quantity)
+        if tlp then v=tlp
+        elseif type(supply.market)=="number" and supply.market>0 then v=supply.market end
     end
-    return AHPrice(itemID)
+    if v==nil then v=AHPrice(itemID) end
+    apMemo[itemID]=v or false
+    return v
 end
 
 function RA.NPCSellPriceOf(itemID)
@@ -327,6 +411,13 @@ local function RequestProduct(id)
 end
 
 local function SnapshotSec()
+    if ns.IsForever then
+        local bridge=ns.AuctionBridge
+        local snapshot=bridge and bridge.FullScanSnapshotStatus and bridge.FullScanSnapshotStatus()
+        local stamp=snapshot and snapshot.status=="available" and tonumber(snapshot.observedAt)
+        if not stamp or stamp<=0 then return nil end
+        return math.max(0,(time and time() or 0)-stamp)
+    end
     local A = Auctionator
     local st = (type(A) == "table") and A.SavedState
     if type(st) ~= "table" then return nil end
@@ -344,6 +435,8 @@ end
 
 function RA.HasPriceData()
     if priceCache.__any then return true end
+    local eb = ns.EasyBridge
+    if eb and eb.Available and eb.Available() then return true end
     local supply = ns.ProfSupply
     return (supply and supply.Ready and supply.Ready()) and true or false
 end
@@ -355,6 +448,9 @@ end
 local ICON_G = "|TInterface\\MoneyFrame\\UI-GoldIcon:0|t"
 local ICON_S = "|TInterface\\MoneyFrame\\UI-SilverIcon:0|t"
 local ICON_C = "|TInterface\\MoneyFrame\\UI-CopperIcon:0|t"
+local ICON_GS = "|TInterface\\MoneyFrame\\UI-GoldIcon:11|t"
+local ICON_SS = "|TInterface\\MoneyFrame\\UI-SilverIcon:11|t"
+local ICON_CS = "|TInterface\\MoneyFrame\\UI-CopperIcon:11|t"
 
 function RA.StepConsumeCost(st)
     if type(st) ~= "table" then return nil end
@@ -403,6 +499,23 @@ function RA.MoneyStr(copper, opt)
         return format("%d%s%02d%s", s, ICON_S, c, ICON_C)
     end
     return format("%d%s", c, ICON_C)
+end
+
+function RA.MoneyStrS(copper)
+    copper = tonumber(copper)
+    if not copper or copper <= 0 then return "0" .. ICON_CS end
+    local g = math.floor(copper / 10000)
+    local s = math.floor(copper / 100) % 100
+    local c = copper % 100
+    if g > 0 then
+        if s > 0 then return format("%d%s%02d%s", g, ICON_GS, s, ICON_SS) end
+        return format("%d%s", g, ICON_GS)
+    end
+    if s > 0 then
+        if c > 0 then return format("%d%s%02d%s", s, ICON_SS, c, ICON_CS) end
+        return format("%d%s", s, ICON_SS)
+    end
+    return format("%d%s", c, ICON_CS)
 end
 
 function RA.MoneyStrTip(copper)
@@ -1611,16 +1724,18 @@ function RA.StampSupply(result, context)
         local mid = e.id or e[1]
         if mid and not e.vendor and (e.source == nil or e.source == "ah") then
             local rec = SupplyOf(mid)
-            if rec and rec.complete and rec.ownerExcluded and rec.source == "client-auction-results"
+            local forced = AB and AB.ForceExpiredActive and AB.ForceExpiredActive()
+            if rec and rec.complete and rec.source == "client-auction-results"
                 and type(rec.quantity) == "number" and rec.observedAt > 0
-                and rec.observedAt <= now and now - rec.observedAt <= RA.MaxAuctionSupplyAgeSeconds() then
+                and rec.observedAt <= now
+                and (forced or now - rec.observedAt <= RA.MaxAuctionSupplyAgeSeconds()) then
                 e.source = e.source or "ah"
                 e.availableCount = rec.quantity
                 e.supplyObserved = true
                 e.supplyObservedAt = rec.observedAt
                 e.supplySource = rec.source
                 e.supplyComplete = true
-                e.supplyOwnerExcluded = true
+                e.supplyOwnerExcluded = rec.ownerExcluded==true
                 if type(rec.market) == "number" and rec.market > 0 then e.supplyObservedPrice = rec.market end
             else
                 e.supplyObserved = false
@@ -1837,19 +1952,22 @@ end
 
 local cache = {}
 
-function RA.Invalidate()
+function RA.Invalidate(reason)
     local R = ns.ProfRecovery
     if R and R.Invalidate then R.Invalidate() end
     local G = ns.ProfGates
     if G and G.Invalidate then G.Invalidate() end
     for k in pairs(cache) do cache[k] = nil end
-    for k in pairs(priceCache) do
-        if k ~= "__any" then priceCache[k] = nil end
+    if reason ~= "client-inputs" then
+        for k in pairs(priceCache) do
+            if k ~= "__any" then priceCache[k] = nil end
+        end
+        priceCache.__any = nil
+        for k in pairs(apMemo) do apMemo[k]=nil end
+        for k in pairs(vendorCache) do vendorCache[k] = nil end
+        for k in pairs(ahReason) do ahReason[k] = nil end
+        for k in pairs(ahAge) do ahAge[k] = nil end
     end
-    priceCache.__any = nil
-    for k in pairs(vendorCache) do vendorCache[k] = nil end
-    for k in pairs(ahReason) do ahReason[k] = nil end
-    for k in pairs(ahAge) do ahAge[k] = nil end
 end
 
 local priceWatchers = {}
@@ -1857,13 +1975,15 @@ function RA.OnPricesChanged(fn)
     if type(fn) == "function" then priceWatchers[#priceWatchers + 1] = fn end
 end
 
+function RA.NotifyPricesChanged()
+    RA.Invalidate()
+    for _, fn in ipairs(priceWatchers) do pcall(fn) end
+end
+
 local ahWatch = CreateFrame("Frame")
 ahWatch:RegisterEvent("AUCTION_HOUSE_CLOSED")
 ahWatch:SetScript("OnEvent", function()
-    C_Timer.After(0, function()
-        RA.Invalidate()
-        for _, fn in ipairs(priceWatchers) do pcall(fn) end
-    end)
+    C_Timer.After(0, function() RA.NotifyPricesChanged() end)
 end)
 
 local function Fingerprint(opts, slug)
@@ -1914,7 +2034,7 @@ function RA.OptionsFor(slug, current, skipExecutionInventory)
     local target = PDm.LvTarget and PDm.LvTarget(slug) or CAP
     local lv = tonumber(current)
     return {
-        start = (PDm.Setting("autoFromCurrent",slug) and lv) and math.max(1, lv) or 1,
+        start = PDm.AutoStartSkillOf and PDm.AutoStartSkillOf(slug, lv) or ((PDm.Setting("autoFromCurrent",slug) and lv) and math.max(1, lv) or 1),
         onlyAH = PDm.Setting("autoOnlyAH",slug),
         considerAuctionSupply = PDm.Setting("autoConsiderAuctionSupply",slug),
         allowLimitedFormulas = PDm.Setting("autoBuyLimitedFormulas",slug),

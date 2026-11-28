@@ -20,10 +20,11 @@ local BTN_GAP = 8
 local MAXS = (LF.MAX_SCHEMES or 6)
 
 local CFG_PAD = 12
-local CFG_CONTENT_W = 196
+local CFG_POP_W = ns.WIDE_UI and 280 or 220
+local CFG_CONTENT_W = CFG_POP_W - 24
 local CFG_ICON_SZ, CFG_ICON_GAP = 22, 6
 local CFG_PAGE = 4
-local CFG_COLS, CFG_COL_W = 2, 94
+local CFG_COLS, CFG_COL_W = 2, (CFG_CONTENT_W - 8) / 2
 local CFG_ROW_H, CFG_HEAD_H, CFG_GROUP_GAP = 24, 26, 8
 local CFG_ROW1_Y, CFG_HDR_Y, CFG_SCROLL_TOP = -32, -8, 58
 
@@ -49,8 +50,8 @@ UI.ICON_CHOICES = {
     "Interface\\Icons\\INV_Jewelry_Ring_01", "Interface\\Icons\\INV_Jewelry_Necklace_01",
     "Interface\\Icons\\INV_Jewelry_Talisman_01", "Interface\\Icons\\INV_Misc_Gem_01",
     "Interface\\Icons\\INV_Misc_Book_01", "Interface\\Icons\\INV_Misc_QuestionMark",
-    "Interface\\Icons\\Ability_Warrior_DefensiveStance", "Interface\\Icons\\Ability_Warrior_Charge",
-    "Interface\\Icons\\Spell_Holy_DevotionAura", "Interface\\Icons\\Spell_Holy_HolyBolt",
+    "Interface\\Icons\\inv_shield_06", "Interface\\Icons\\ability_rogue_eviscerate",
+    "Interface\\Icons\\spell_holy_holybolt", "Interface\\Icons\\spell_holy_auraoflight",
     "Interface\\Icons\\Spell_DeathKnight_BloodPresence", "Interface\\Icons\\Spell_DeathKnight_FrostPresence",
 }
 
@@ -110,6 +111,15 @@ local function MakeToggle(parent)
     tg.label = MakeFS(parent, 14, C_TEXT, "LEFT")
     tg.label:SetPoint("LEFT", tg, "RIGHT", 4, 0)
     return tg
+end
+
+local function MakeChoice(parent)
+    local bt = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    bt:SetSize(36, 20)
+    if ns.hui and ns.hui.SkinButton then ns.hui.SkinButton(bt) end
+    bt.label = MakeFS(parent, 14, C_TEXT, "LEFT")
+    bt.label:SetPoint("LEFT", bt, "RIGHT", 4, 0)
+    return bt
 end
 
 local function MakePager(parent, right)
@@ -311,13 +321,13 @@ function UI:EnsureConfig()
     popup:SetFrameStrata("HIGH")
     popup:EnableMouse(true)
     popup:SetScript("OnMouseWheel", function() end)
-    popup:SetWidth(220)
+    popup:SetWidth(CFG_POP_W)
     if ns.MainFrame then
         popup:SetPoint("TOPLEFT", host, "TOPRIGHT", 4, 0)
         popup:SetPoint("BOTTOMLEFT", host, "BOTTOMRIGHT", 4, 0)
     else
         popup:SetPoint("CENTER")
-        popup:SetSize(220, 600)
+        popup:SetSize(CFG_POP_W, 600)
     end
     popup:Hide()
     if ns.hui and ns.hui.SkinPopup then ns.hui.SkinPopup(popup, 8, "both", ns.hui.layer.L0) end
@@ -408,7 +418,7 @@ function UI:EnsureConfig()
     reset:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -CFG_PAD, CFG_HDR_Y)
     reset:SetScript("OnClick", function(self)
         ns.PlaySound(1)
-        local list = LF.LoadPresets(LF.PlayerClass())
+        local list = LF.LoadPresets(LF.ViewClass())
         local menu = {}
         for i = 1, #list do
             local p = list[i]
@@ -418,7 +428,7 @@ function UI:EnsureConfig()
                 local st = LF.GetStore()
                 local sch = st.chooseID and st[st.chooseID]
                 if not sch then UI:ConfigHint(L["请先选择一个方案"]); return end
-                LF.ApplyPreset(sch, LF.PlayerClass(), pick)
+                LF.ApplyPreset(sch, LF.ViewClass(), pick)
                 UI:RefreshBar(); LF.ApplyAll(); UI:RefreshConfig()
             end }
         end
@@ -439,6 +449,14 @@ function UI:EnsureConfig()
 
     local schemeSet = NewBtn(popup, L["方案设置"], 68, 20)
     schemeSet:SetPoint("RIGHT", reset, "LEFT", -6, 0)
+    if ns.WIDE_UI then
+        -- 英文按钮按文字宽度放宽，标题在剩余空间内缩小 / English buttons fit their text; the title shrinks into what is left
+        for _, b in ipairs({ reset, schemeSet }) do
+            local f = b:GetFontString()
+            if f then b:SetWidth(math.max(b:GetWidth(), math.ceil(f:GetStringWidth() or 0) + 16)) end
+        end
+        if ns.FitFS then ns.FitFS(title, CFG_POP_W - 16 - CFG_PAD - reset:GetWidth() - schemeSet:GetWidth() - 14) end
+    end
     schemeSet:SetScript("OnClick", function(self)
         ns.PlaySound(1)
         local id = LF.GetStore().chooseID
@@ -499,11 +517,17 @@ function UI:EnsureConfig()
             for _, k in ipairs(D.KeyList(dim)) do
                 local tg = MakeToggle(content)
                 tg.dim, tg.key = dim, k.key
-                tg.label:SetText(k.label)
+                tg.label:SetText(L[k.label])
+                if ns.WIDE_UI and ns.FitFS then ns.FullText(tg.label, L[k.label]); ns.FitFS(tg.label, CFG_COL_W - 42) end
                 tg:SetScript("OnClick", function(self)
                     local st = LF.GetStore()
                     local sch = st.chooseID and st[st.chooseID]
-                    if not sch then self:SetChecked(false); return end
+                    if not sch then
+                        -- 未选方案时点击给出提示，而不是静默无反应 / with no preset selected, say so instead of silently ignoring the click
+                        self:SetChecked(false)
+                        UI:ConfigHint(L["请先点上方方案图标启用"])
+                        return
+                    end
                     local on = not (type(sch[self.dim]) == "table" and sch[self.dim][self.key] == 1)
                     LF.SetOption(sch, self.dim, self.key, on)
                     self:SetChecked(on)
@@ -513,6 +537,49 @@ function UI:EnsureConfig()
                 cfg.cells[#cfg.cells + 1] = { tg = tg, group = gkey }
                 cfg.toggles[#cfg.toggles + 1] = tg
             end
+        end
+
+        if gkey == "Other" then
+            local bt = MakeChoice(content)
+            cfg.classBtn = bt
+            bt:SetScript("OnClick", function(self)
+                local menu = {}
+                menu[#menu + 1] = { text = L["跟随角色"], func = function()
+                    LF.SetViewClass(nil)
+                    local pc = LF.PlayerClass()
+                    local st = LF.GetStore()
+                    local sch = st.chooseID and st[st.chooseID]
+                    if sch and pc then
+                        LF.ApplyPreset(sch, pc, LF.ResolvePresetIndex(sch, LF.LoadPresets(pc)))
+                    end
+                    UI:RefreshBar()
+                    UI:RefreshConfig()
+                end }
+                for _, tok in ipairs({ "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST",
+                                       "SHAMAN", "MAGE", "WARLOCK", "DRUID", "DEATHKNIGHT", "MONK" }) do
+                    if D.Presets[tok] or D.ClassUsable[tok] then
+                        local pick = tok
+                        menu[#menu + 1] = { text = LF.ClassName(pick), func = function()
+                            LF.SetViewClass(pick)
+                            local st = LF.GetStore()
+                            local sch = st.chooseID and st[st.chooseID]
+                            if sch then
+                                LF.ApplyPreset(sch, pick, LF.ResolvePresetIndex(sch, LF.LoadPresets(pick)))
+                            end
+                            UI:RefreshBar()
+                            UI:RefreshConfig()
+                        end }
+                    end
+                end
+                menu[#menu + 1] = { text = L["按此职业重建"], func = function()
+                    LF.RebuildForClass(LF.ViewClass())
+                    UI:RefreshBar()
+                    UI:RefreshConfig()
+                end }
+                OpenMenu(self, menu)
+            end)
+            cfg.cells[#cfg.cells + 1] = { tg = bt, group = gkey }
+            cfg.toggles[#cfg.toggles + 1] = bt
         end
     end
 
@@ -665,10 +732,20 @@ function UI:RefreshConfig()
     cfg.right:EnableMouse(canR)
 
     for _, tg in ipairs(cfg.toggles) do
-        local on = false
-        if sch and type(sch[tg.dim]) == "table" and sch[tg.dim][tg.key] == 1 then on = true end
-        tg:SetChecked(on)
-        if sch then tg:Enable() else tg:Disable() end
+        if tg.dim then
+            local on = false
+            if sch and type(sch[tg.dim]) == "table" and sch[tg.dim][tg.key] == 1 then on = true end
+            tg:SetChecked(on)
+            -- 保持可点（点击时提示先选方案），未选方案时变暗 / stay clickable (clicking explains what to do), dimmed with no preset
+            tg:SetAlpha(sch and 1 or 0.45)
+            if tg.label then tg.label:SetAlpha(sch and 1 or 0.45) end
+        end
+    end
+
+    if cfg.classBtn then
+        local vc = LF.ViewClass()
+        cfg.classBtn.label:SetText(L["过滤职业"] .. L["："] .. (LF.ClassName(vc) or L["跟随角色"]))
+        cfg.classBtn:Enable()
     end
 end
 
@@ -795,7 +872,7 @@ function UI:OpenSchemeDialog(mode, idx)
     end
     UI:RefreshDialog()
     UI.dlg.popup:Show()
-    UI.dlg.edit:SetFocus()
+    ns.FocusEdit(UI.dlg.edit)
 end
 
 function UI:RefreshDialog()

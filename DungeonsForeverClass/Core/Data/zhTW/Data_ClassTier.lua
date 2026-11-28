@@ -1,4 +1,4 @@
-local gl = (type(GetLocale) == 'function') and GetLocale() or 'zhCN'
+local gl = (type(DF_Locale) == 'function') and DF_Locale() or 'zhCN'
 if gl ~= 'zhTW' then return end
 
 local ns = _G.DF_NS or {}
@@ -54,6 +54,7 @@ ns.ClassTier = {
         DRUID = {
             { key = "balance", name = "平衡", nameEn = "Balance", icon = "Interface\\Icons\\spell_nature_starfall" },
             { key = "feral", name = "野性", nameEn = "Feral", icon = "Interface\\Icons\\ability_racial_bearform" },
+            { key = "bear", name = "守護", nameEn = "Guardian", icon = "Interface\\Icons\\ability_druid_demoralizingroar" },
             { key = "resto", name = "恢復", nameEn = "Restoration", icon = "Interface\\Icons\\Spell_Nature_HealingTouch" },
         },
     },

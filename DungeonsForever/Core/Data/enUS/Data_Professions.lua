@@ -1,9 +1,10 @@
 local _, ns = ...
 
-if (type(GetLocale) ~= "function") or GetLocale() ~= "enUS" then return end
+if (type(DF_Locale) ~= "function") or DF_Locale() ~= "enUS" then return end
 local _, ns = ...
 
 ns.ProfData = {
+    runtime={schema=1,revision=1,skillIDs={[171]="alchemy",[164]="blacksmithing",[333]="enchanting",[202]="engineering",[165]="leatherworking",[197]="tailoring",[186]="mining",[182]="herbalism",[393]="skinning",[185]="cooking",[129]="first-aid",[356]="fishing",[40]="poisons"},essenceConversions={[1]={["greaterID"]=10939,["inputCount"]=1,["inputItemID"]=10939,["key"]="10938:10939",["lesserID"]=10938,["manual"]=true,["noSkillGain"]=true,["outputCount"]=3,["outputItemID"]=10938,["status"]="confirmed"},[2]={["greaterID"]=10939,["inputCount"]=3,["inputItemID"]=10938,["key"]="10938:10939",["lesserID"]=10938,["manual"]=true,["noSkillGain"]=true,["outputCount"]=1,["outputItemID"]=10939,["status"]="confirmed"},[3]={["greaterID"]=11082,["inputCount"]=1,["inputItemID"]=11082,["key"]="10998:11082",["lesserID"]=10998,["manual"]=true,["noSkillGain"]=true,["outputCount"]=3,["outputItemID"]=10998,["status"]="confirmed"},[4]={["greaterID"]=11082,["inputCount"]=3,["inputItemID"]=10998,["key"]="10998:11082",["lesserID"]=10998,["manual"]=true,["noSkillGain"]=true,["outputCount"]=1,["outputItemID"]=11082,["status"]="confirmed"},[5]={["greaterID"]=11135,["inputCount"]=1,["inputItemID"]=11135,["key"]="11134:11135",["lesserID"]=11134,["manual"]=true,["noSkillGain"]=true,["outputCount"]=3,["outputItemID"]=11134,["status"]="confirmed"},[6]={["greaterID"]=11135,["inputCount"]=3,["inputItemID"]=11134,["key"]="11134:11135",["lesserID"]=11134,["manual"]=true,["noSkillGain"]=true,["outputCount"]=1,["outputItemID"]=11135,["status"]="confirmed"},[7]={["greaterID"]=11175,["inputCount"]=1,["inputItemID"]=11175,["key"]="11174:11175",["lesserID"]=11174,["manual"]=true,["noSkillGain"]=true,["outputCount"]=3,["outputItemID"]=11174,["status"]="confirmed"},[8]={["greaterID"]=11175,["inputCount"]=3,["inputItemID"]=11174,["key"]="11174:11175",["lesserID"]=11174,["manual"]=true,["noSkillGain"]=true,["outputCount"]=1,["outputItemID"]=11175,["status"]="confirmed"},[9]={["greaterID"]=16203,["inputCount"]=1,["inputItemID"]=16203,["key"]="16202:16203",["lesserID"]=16202,["manual"]=true,["noSkillGain"]=true,["outputCount"]=3,["outputItemID"]=16202,["status"]="confirmed"},[10]={["greaterID"]=16203,["inputCount"]=3,["inputItemID"]=16202,["key"]="16202:16203",["lesserID"]=16202,["manual"]=true,["noSkillGain"]=true,["outputCount"]=1,["outputItemID"]=16203,["status"]="confirmed"}},rankDefaults={ranks={{"初级","初級","Apprentice"}, {"中级","中級","Journeyman"},{"高级","高級","Expert"}, {"专家级","專家級","Artisan"}},reminderSkills={[75]=0,[150]=50,[225]=125,[300]=225},methods={cooking={[3]="book",[4]="quest"},["first-aid"]={[3]="book",[4]="quest"},fishing={[3]="book",[4]="quest"}},routeReminders={cooking={[4]=200},["first-aid"]={[4]=200},fishing={[4]=200}},quests={fishing={[4]={id=6607,name={"钓鱼专家纳特·帕格","釣魚專家納特·帕格","Nat Pagle, Angler Extreme"}}},cooking={[4]={id=6610,name={"蚌肉大餐","蚌肉大餐","Clamlette Surprise"}}},},sources={cooking={[4]={npcID=8125,name={"迪尔格·奎克里弗","迪爾格·奎克里弗","Dirge Quikcleave"},zone={"加基森 · 塔纳利斯","加基森 · 塔納利斯","Gadgetzan, Tanaris"},questID=6610,questName={"蚌肉大餐","蚌肉大餐","Clamlette Surprise"}}},fishing={[3]={npcID=2626,name={"老人海明","老人海明","Old Man Heming"},zone={"藏宝海湾 · 荆棘谷","藏寶海灣 · 荊棘谷","Booty Bay, Stranglethorn Vale"},itemID=16083},[4]={npcID=12919,map=1445,x=58.6,y=60.0,name={"纳特·帕格","納特·帕格","Nat Pagle"},zone={"Dustwallow Marsh","塵泥沼澤","Dustwallow Marsh"},questID=6607,questName={"钓鱼专家纳特·帕格","釣魚專家納特·帕格","Nat Pagle, Angler Extreme"}}}}}},
     build = "1.60.1.70338",
     updated = "2026-10-11",
 
@@ -254,10 +255,10 @@ ns.ProfData = {
             sub = 5,
             kinds = { Recipe=36, Blueprint=4 },
             ranks = {
-                { "Apprentice", "75", "Learn from a cooking trainer.", nil },
-                { "Adept", "150", "Learn from a cooking trainer.", nil },
-                { "Expert", "225", "Learned from the book \"{book}\"; requires Cooking 125. Sold by Shandrina (Alliance) and Wulan (Horde).", 16082 },
-                { "Master", "300", "Reach Cooking 225, then complete Clamlette Surprise from Dirge Quikcleave in Gadgetzan. Requires level 35.", nil },
+                { "Apprentice", "75", "Learned from a Cooking trainer.", nil },
+                { "Adept", "150", "Learned from a Cooking trainer.", nil },
+                { "Expert", "225", "Learned from the book \"{book}\"; requires Cooking 125. Sold in Silverwind Refuge (Alliance) and Shadowprey Village (Horde).", 16072 },
+                { "Master", "300", "After reaching 225 Cooking, take the quest from Dirge Quikcleave in Gadgetzan. Learned on completion (requires level 35).", nil },
             },
             camp = {
                 { 279981, "Apprentice Campfire Kit", "inv_camelot_camping_welcomingcampfire", 1, "A cooking campfire that can hold 3 camp objects", "", "A cooking campfire that can hold 3 camp objects", "", "", "3", { { 4470, 1 } }, nil },
@@ -288,10 +289,10 @@ ns.ProfData = {
             },
             perks = { "legacy-perk-luremaster", "legacy-perk-working-overtime", "legacy-perk-dedicated-study" },
             tips = { "The Aquarium needs one Raw Brilliant Smallfish (fishable in starting-zone fresh water in Classic Era) and an Empty Bottle bought from a vendor.", "The Tackle Rack or Fishing Hut is built on top of the Aquarium, keeping its +8% all-stats effect.", "Watch your lure: \"Lure Master\"'s extra-catch chance requires the lure to be active.", "If you want this skill point to land on Fishing, check which of your gathering / crafting skills is lowest before using \"Specialty Study\".", "The following points are not yet confirmed." },
-            verify = { "游戏内训练师与供应商的位置（无限服实测点位）", "Catch tables and the skill each zone requires", "What the Tackle Rack and Fishing Hut add to your catches", "Where patterns drop, and how to learn Find Fish", "Catches that \"Lure Master\" can proc" },
+            verify = { "In-game trainer and vendor locations (field-tested on the Infinite server)", "Catch tables and the skill each zone requires", "What the Tackle Rack and Fishing Hut add to your catches", "Where patterns drop, and how to learn Find Fish", "Catches that \"Lure Master\" can proc" },
             unknowns = { "What can be caught, and the tier-2 effects." },
             steps_title = "How to fish",
-            steps_note = "训练师与供应商的点位均按无限服实测校准，瓦拉纳尔的那位来自内测玩家分享；其余为客户端自身的文本。",
+            steps_note = "All trainer and vendor locations are calibrated from field tests on the Infinite server; the one in Valanar comes from a beta tester. Everything else is the client's own text.",
             steps = {
                 { "Learning to Fish", "Learn from a fishing trainer — every capital has one, and there is one by the pond in the floating city of Varanar. After learning it you also gain \"Lures & Tackle\", used to place fishing objects at camp." },
                 { "Equipping the rod", "Buy a fishing rod from the fishing supplier near the trainer and equip it from your bags. It takes both hands — no rod, no fishing." },
@@ -302,7 +303,7 @@ ns.ProfData = {
                 { "Apprentice", "75", "Learn from a fishing trainer.", nil },
                 { "Adept", "150", "Learn from a fishing trainer.", nil },
                 { "Expert", "225", "Learned from the book \"{book}\"; requires level 20 and Fishing 125. Sold in Booty Bay.", 16083 },
-                { "Master", "300", "Reach Fishing 225, then take the quest from Nat Pagle in Dustwallow Marsh and complete it.", nil },
+                { "Master", "300", "After reaching 225 Fishing, take the quest from Nat Pagle in Dustwallow Marsh. Learned on completion.", nil },
             },
             fishing = {
                 spells = {
@@ -353,10 +354,10 @@ ns.ProfData = {
             sub = 7,
             kinds = { Manual=9, Blueprint=2 },
             ranks = {
-                { "Apprentice", "75", "Learn from a first aid trainer.", nil },
-                { "Adept", "150", "Learn from a first aid trainer.", nil },
-                { "Expert", "225", "Learned from the book \"{book}\"; requires First Aid 125. Sold by Deneb Walker (Alliance) and Balai Lok'Wein (Horde).", 16084 },
-                { "Master", "300", "Reach First Aid 225, then complete the Triage quest from your faction's doctor in Theramore (Alliance) or Hammerfall (Horde). Requires level 35.", nil },
+                { "Apprentice", "75", "Learned from a First Aid trainer.", nil },
+                { "Adept", "150", "Learned from a First Aid trainer.", nil },
+                { "Expert", "225", "Learned from the book \"{book}\"; requires First Aid 125. Sold in Stromgarde (Alliance) and Brackenwall Village (Horde).", 16084 },
+                { "Master", "300", "After reaching 225 First Aid, take the rank-up quest from the doctor (Alliance: Theramore Isle; Horde: Hammerfall). Learned on completion (requires level 35).", nil },
             },
             camp = {
                 { 279968, "First Aid Kit", "inv_misc_bandage_11", 20, "Gives 56 Stamina to everyone sitting nearby, like Power Word: Fortitude (value at level 60, scales with level)", "56 Stamina", "Gives 56 Stamina to everyone sitting nearby, like Power Word: Fortitude", "", "Power Word: Fortitude", "", { { 1251, 3 }, { 159, 1 } }, nil },
@@ -392,23 +393,23 @@ ns.ProfData = {
             },
         },
         ["poisons"] = {
-            name = "毒药",
+            name = "Poisons",
             icon = 136242,
             kind = "secondary",
             section = "crafting",
-            summary = "盗贼的辅助专业：技能越高能调制的毒药越强。材料向毒药商人与黑市贩子购买，调成腐蚀、削弱与消磨敌人的药剂，涂在武器上生效。1.60 新增萎缩、迟钝、解离与玄秘毒药。",
-            status = "待实地核对",
+            summary = "The rogue's secondary profession: the higher your skill, the stronger the poisons you can make. Buy materials from poison vendors and black market dealers, then brew agents that corrode, weaken and wear down enemies; apply them to your weapons to take effect. Patch 1.60 adds Atrophic, Numbing, Sebacious and Occult Poisons.",
+            status = "To be verified in-game",
             recipes = 26,
             sub = 1,
             kinds = { Recipe = 26 },
         },
 
         ["comprehension"] = {
-            name = "理解",
+            name = "Comprehension",
             icon = 135933,
             kind = "secondary",
-            summary = "解读散落世界各处的魔法卷轴：理解技能越高，能解译的卷轴越强。卷轴读取后消耗，提供各类增益效果；在图书馆中研究可以提升理解技能。",
-            status = "待实地核对",
+            summary = "Decipher magical scrolls scattered across the world: the higher your Comprehension skill, the more powerful the scrolls you can decipher. Scrolls are consumed when read and grant a variety of buffs; studying in libraries raises your Comprehension skill.",
+            status = "To be verified in-game",
             recipes = 7,
             sub = 2,
             kinds = { Recipe = 7 },

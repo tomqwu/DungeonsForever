@@ -8,6 +8,8 @@ ns.ClassTrainers = CT
 local TPL_SPELL = "SPELL"
 local TPL_HEADER = "HEADER"
 
+local BEST_GREEN = { 0.25, 0.85, 0.25 }
+
 local CLASS_ICON = {
     WARRIOR = "Interface\\Icons\\ClassIcon_Warrior",
     PALADIN = "Interface\\Icons\\ClassIcon_Paladin",
@@ -79,8 +81,10 @@ local function Collect(cls, faction)
     return out
 end
 
-local function SortZones(zids, cur, idx)
+local function SortZones(zids, cur, idx, best)
     table.sort(zids, function(a, b)
+        local ba, bb = best[a], best[b]
+        if ba ~= bb then return ba and true or false end
         if a == cur and b ~= cur then return true end
         if b == cur and a ~= cur then return false end
         local ia, ib = idx[a], idx[b]
@@ -89,6 +93,22 @@ local function SortZones(zids, cur, idx)
         if ib then return false end
         return a < b
     end)
+end
+
+local function CitySuffix(zid)
+    local td = ns.TrainerDiscount
+    if not (td and td.CityInfo) then return nil end
+    local ok, info = pcall(td.CityInfo, zid)
+    if not ok or type(info) ~= "table" then return nil end
+    local piece
+    if info.label and info.label ~= "" then
+        piece = string.format(ns.L["%d%%（%s）"], info.pct or 0, info.label)
+    else
+        piece = string.format("%d%%", info.pct or 0)
+    end
+    local text = string.format(ns.L["声望 %s"], piece)
+    if info.best then text = text .. " · " .. ns.L["最省"] end
+    return text, info.best and true or false
 end
 
 function CT.Groups()
@@ -114,7 +134,13 @@ function CT.Groups()
     local cur = CurrentZoneId()
     local idx = {}
     for i, z in ipairs(data.zoneOrder or {}) do idx[z] = i end
-    SortZones(zids, cur, idx)
+    local suffixOf, best = {}, {}
+    for _, zid in ipairs(zids) do
+        local txt, isBest = CitySuffix(zid)
+        suffixOf[zid] = txt
+        if isBest then best[zid] = true end
+    end
+    SortZones(zids, cur, idx, best)
 
     local icon = CLASS_ICON[cls]
     local subClass = format(ns.L["%s训练师"], classLabel or "")
@@ -141,8 +167,17 @@ function CT.Groups()
                 },
             }
         end
+        local headText = zoneName
+        if zid ~= 0 then
+            local suffix = suffixOf[zid]
+            if suffix then headText = headText .. " · " .. suffix end
+        end
         groups[#groups + 1] = {
-            header = { templateKey = TPL_HEADER, text = zoneName },
+            header = {
+                templateKey = TPL_HEADER,
+                text = headText,
+                color = best[zid] and BEST_GREEN or nil,
+            },
             elements = elements,
         }
     end
